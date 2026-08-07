@@ -56,7 +56,7 @@ const platforms = [hac, skywardLegacy, powerschool];
 // previous wildcard `app.use(cors())` which let any website call the API with
 // credentials. Override the allowlist with CORS_ORIGINS (comma-separated).
 const allowedOrigins = (process.env.CORS_ORIGINS ||
-  'https://web.gradexis.app,https://gradexis.app')
+  'https://web.gradiate.app,https://gradiate.app')
   .split(',')
   .map((s) => s.trim())
   .filter(Boolean);
@@ -175,6 +175,24 @@ async function sendPushToAllDevices() {
   return webPushService.sendPushToAllDevices();
 }
 
+// Deployment schedulers can call this endpoint because in-process timers do not
+// survive scale-to-zero/serverless restarts. Keep it protected: broadcasting a
+// trigger makes every subscribed client perform a portal fetch.
+app.post('/push/trigger', strictLimiter, async (req, res) => {
+  const configuredSecret = process.env.PUSH_TRIGGER_SECRET;
+  const suppliedSecret = req.get('authorization')?.replace(/^Bearer\s+/i, '');
+  if (!configuredSecret || suppliedSecret !== configuredSecret) {
+    return res.status(401).json({ success: false, message: 'Unauthorized' });
+  }
+  try {
+    await sendPushToAllDevices();
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Scheduled push trigger failed:', error);
+    res.status(500).json({ success: false, message: 'Push trigger failed' });
+  }
+});
+
 // How often to fire the "go fetch" trigger, in minutes. Falls back to 1 hour.
 const pushIntervalMinutes = Number(process.env.PUSH_INTERVAL_MINUTES) || 60;
 setInterval(() => {
@@ -204,4 +222,4 @@ app.listen(port, () => {
   console.log(`Main App listening on http://localhost:${port}`);
 });
 
-export default app; 
+export default app;

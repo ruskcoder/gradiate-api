@@ -114,9 +114,13 @@ async function sendExpoPush(expoSubs) {
       const tickets = res.data?.data ?? [];
       await Promise.all(
         tickets.map(async (ticket, idx) => {
-          if (ticket.status === 'error' && ticket.details?.error === 'DeviceNotRegistered') {
-            console.log('Pruning dead expo subscription');
-            await removeSubscription(dedupeKeyFor(batchSubs[idx].subscription));
+          if (ticket.status === 'error') {
+            if (ticket.details?.error === 'DeviceNotRegistered') {
+              console.log('Pruning dead expo subscription');
+              await removeSubscription(dedupeKeyFor(batchSubs[idx].subscription));
+            } else {
+              console.error('Expo rejected push ticket:', ticket.message, ticket.details);
+            }
           }
         })
       );

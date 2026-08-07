@@ -1,12 +1,12 @@
 {
     "name": "Demo Student",
     "grade": "10",
-    "school": "Gradexis HS",
+    "school": "Gradiate HS",
     "dob": "9/10/2024",
     "counselor": "John Doe",
     "language": "English",
     "cohort-year": "2030",
-    "link": "https://gradexis.com/",
+    "link": "https://gradiate.com/",
     "session": {
         "version": "tough-cookie@5.0.0",
         "storeType": "MemoryCookieStore",

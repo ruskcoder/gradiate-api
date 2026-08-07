@@ -1,12 +1,12 @@
-# Gradexis API
+# Gradiate API
 An all-in-one API for: 
  - HAC (Home Access Center)
  - PowerSchool SIS
-Used by the app Gradexis:
+Used by the app Gradiate:
 
-[See App Repo](https://github.com/ruskcoder/gradexis-app)
+[See App Repo](https://github.com/ruskcoder/gradiate-app)
 
-[Visit Site](https://gradexis.com/)
+[Visit Site](https://gradiate.com/)
 
 More coming soon!
 
