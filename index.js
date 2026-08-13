@@ -55,8 +55,11 @@ const platforms = [hac, skywardLegacy, powerschool];
 // requests are allowed through. Everything else is rejected instead of the
 // previous wildcard `app.use(cors())` which let any website call the API with
 // credentials. Override the allowlist with CORS_ORIGINS (comma-separated).
+//
+// Both the old gradexis.app and the new gradiate.app origins are allowed: the
+// rename is still in flight and the deployed web app is served from either.
 const allowedOrigins = (process.env.CORS_ORIGINS ||
-  'https://web.gradiate.app,https://gradiate.app')
+  'https://web.gradiate.app,https://gradiate.app,https://web.gradexis.app,https://gradexis.app')
   .split(',')
   .map((s) => s.trim())
   .filter(Boolean);
