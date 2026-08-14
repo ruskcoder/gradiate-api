@@ -14,7 +14,8 @@ import process from 'process';
 import * as cheerio from 'cheerio';
 import { AuthenticationError, ValidationError, APIError } from '../../core/errors.js';
 import { createSessionValidator, streamOrThrow, assertSafeHttpUrl } from '../../core/platform.js';
-import { HAC_ENDPOINTS, ERROR_MESSAGES } from '../config/constants.js';
+import { debugLog } from '../../core/debug.js';
+import { HAC_ENDPOINTS, ERROR_MESSAGES, LOGGED_OUT_MARKERS } from '../config/constants.js';
 
 // HAC needs a custom link normalizer (drop a trailing /HomeAccess), so it does
 // not use core's defaultFormatLink.
@@ -28,18 +29,37 @@ function formatLink(link) {
   return assertSafeHttpUrl(link);
 }
 
-// A page is a logged-out page if it's the LogOn form or the district splash.
-// Broad on purpose — powers auto-relogin on any dead-session GET.
-function isSessionExpired(html) {
+// A page is a logged-out page if it still shows HAC's LogOn form. Matched on the
+// form's field names (LOGGED_OUT_MARKERS) rather than on page text — see the
+// note there for why prose matching silently broke valid logins.
+//
+// This previously also matched a bare `__RequestVerificationToken`, which HAC
+// emits on the authenticated WeekView too, so a live session read as expired and
+// the reauth wrapper re-logged-in on every request.
+function isLoggedOutPage(html) {
   if (typeof html !== 'string') return false;
-  return html.includes('LogOn') ||
-    html.includes('__RequestVerificationToken') ||
-    html.includes(ERROR_MESSAGES.INVALID_LOGIN); // "Welcome to"
+  return LOGGED_OUT_MARKERS.some((marker) => html.includes(marker));
 }
 
-// Narrower than isSessionExpired: only the district splash marks a page invalid
-// mid-fetch (data pages legitimately contain LogOn/token strings).
-const checkSessionValidity = createSessionValidator(ERROR_MESSAGES.INVALID_LOGIN);
+const isSessionExpired = isLoggedOutPage;
+
+/**
+ * Pull HAC's own reason off a re-rendered LogOn page (ASP.NET's validation
+ * summary). It distinguishes a wrong password from an account that is locked or
+ * disabled, which is worth passing through instead of flattening every failure
+ * to "Invalid username or password".
+ */
+function portalLoginError(html) {
+  try {
+    const text = cheerio.load(html)('.validation-summary-errors').text().trim();
+    return text ? text.replace(/\s+/g, ' ') : null;
+  } catch {
+    return null;
+  }
+}
+
+// Same signal, response-shaped: throws inside data functions on a logged-out page.
+const checkSessionValidity = createSessionValidator(LOGGED_OUT_MARKERS);
 
 function isTestCredentials(username, password) {
   return username === process.env.TESTUSER && password === process.env.TESTPSSWD;
@@ -132,9 +152,21 @@ async function credentialsAuth(session, loginData, progressTracker) {
     }
 
     const loginResult = await session.post(loginUrl, hacLoginData);
-    if (loginResult.data.includes(ERROR_MESSAGES.INVALID_LOGIN)) {
-      return streamOrThrow(progressTracker, 401, ERROR_MESSAGES.INVALID_USERNAME_PASSWORD);
+
+    // A successful HAC login redirects away from the LogOn view (axios follows
+    // it); a rejected one re-renders that same view with an error summary. So
+    // the question is only ever "are we still looking at the login form?".
+    if (isLoggedOutPage(loginResult.data)) {
+      debugLog('hac:login', 'rejected — still on the LogOn form', {
+        landed: loginResult.request?.res?.responseUrl,
+      });
+      return streamOrThrow(
+        progressTracker,
+        401,
+        portalLoginError(loginResult.data) || ERROR_MESSAGES.INVALID_USERNAME_PASSWORD
+      );
     }
+    debugLog('hac:login', 'accepted', { landed: loginResult.request?.res?.responseUrl });
 
     session.hacData = loginResult.data; // splash HTML, read by data/info.js for district
     session.setLastValidationTime(Date.now());

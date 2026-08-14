@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { wrapper } from 'axios-cookiejar-support';
 import { CookieJar } from 'tough-cookie';
+import { attachDebugLogger } from './debug.js';
 
 class SessionWrapper {
   constructor(axiosInstance) {
@@ -65,6 +66,7 @@ function createSession() {
       'Content-Type': 'application/x-www-form-urlencoded'
     }
   }));
+  attachDebugLogger(axiosInstance, 'new');
 
   return new SessionWrapper(axiosInstance);
 }
@@ -95,6 +97,7 @@ function restoreSession(sessionData) {
       'Content-Type': 'application/x-www-form-urlencoded'
     }
   }));
+  attachDebugLogger(axiosInstance, 'restored');
 
   const session = new SessionWrapper(axiosInstance);
 
