@@ -17,7 +17,12 @@ import { asyncHandler } from '../errorHandler.js';
 import ProgressTracker from './progressTracker.js';
 import { createSession, createSuccessResponse } from './session.js';
 import { authenticate } from './auth/index.js';
+import { applyGradeOverrides } from './testOverrides.js';
 import { HTTP_STATUS, AuthenticationError } from './errors.js';
+
+// The routes whose payloads carry class averages, and so can be faked for the
+// test account. Everything else passes through untouched.
+const GRADE_ROUTE_KEYS = new Set(['classes', 'singleClass']);
 
 // path -> which platform.data capability serves it, plus its progress label.
 const ROUTE_TABLE = [
@@ -135,8 +140,14 @@ function createPlatformRoutes(platform) {
         progressTracker.update(50, stage);
         const data = await platform.data[key](auth.session, auth.link, req.body?.options || {}, progressTracker);
 
+        // Test-account grade faking, applied here rather than inside each
+        // platform so every portal gets it for free. A no-op for real users.
+        const shaped = GRADE_ROUTE_KEYS.has(key)
+          ? await applyGradeOverrides(data, auth.username)
+          : data;
+
         const base = auth.session.baseSession || auth.session;
-        progressTracker.complete(createSuccessResponse(data, base));
+        progressTracker.complete(createSuccessResponse(shaped, base));
       } catch (error) {
         progressTracker.error(error.status || error.statusCode || 500, error.message || 'An error occurred');
       }

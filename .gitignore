@@ -4,7 +4,6 @@ __pycache__/
 .idea/
 .DS_Store
 .env
-test*
 cl*.txt
 classes-old.json
 firebase-service-account.json
@@ -12,6 +11,5 @@ firebase-service-account.json
 CLAUDE.md
 .claude/
 graphify-out/
-test*
 *.har
 *.py
