@@ -32,7 +32,7 @@ class ProgressTracker {
     }
 
     error(statusCode, message) {
-        const errorResponse = { success: false, message };
+        const errorResponse = { success: false, status: statusCode, message };
         if (this.streaming) {
             this.res.status(statusCode).end(JSON.stringify(errorResponse));
         } else {
