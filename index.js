@@ -189,8 +189,13 @@ app.post('/push/trigger', strictLimiter, async (req, res) => {
     return res.status(401).json({ success: false, message: 'Unauthorized' });
   }
   try {
-    await sendPushToAllDevices();
-    res.json({ success: true });
+    const delivery = await sendPushToAllDevices();
+    // Report what actually landed. A broadcast where every ticket was rejected
+    // is not a success, however cleanly the request itself completed — reporting
+    // it as one is what hid a total Android push outage behind a 200.
+    const attempted = delivery.expo.attempted + delivery.web.attempted;
+    const sent = delivery.expo.sent + delivery.web.sent;
+    res.json({ success: attempted === 0 || sent > 0, delivery });
   } catch (error) {
     console.error('Scheduled push trigger failed:', error);
     res.status(500).json({ success: false, message: 'Push trigger failed' });

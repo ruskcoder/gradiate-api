@@ -96,7 +96,12 @@ function isGoneError(error) {
  * @param {Array<{subscription: Object}>} expoSubs
  */
 async function sendExpoPush(expoSubs) {
-  if (expoSubs.length === 0) return;
+  const summary = { attempted: expoSubs.length, sent: 0, failed: 0, errors: {} };
+  if (expoSubs.length === 0) return summary;
+
+  const countError = (code) => {
+    summary.errors[code] = (summary.errors[code] || 0) + 1;
+  };
 
   for (let i = 0; i < expoSubs.length; i += 100) {
     const batchSubs = expoSubs.slice(i, i + 100);
@@ -115,31 +120,46 @@ async function sendExpoPush(expoSubs) {
       await Promise.all(
         tickets.map(async (ticket, idx) => {
           if (ticket.status === 'error') {
+            summary.failed++;
+            countError(ticket.details?.error || 'unknown');
             if (ticket.details?.error === 'DeviceNotRegistered') {
               console.log('Pruning dead expo subscription');
               await removeSubscription(dedupeKeyFor(batchSubs[idx].subscription));
             } else {
               console.error('Expo rejected push ticket:', ticket.message, ticket.details);
             }
+          } else {
+            summary.sent++;
           }
         })
       );
       console.log(`Grade check trigger sent (expo x${batchSubs.length})`);
     } catch (error) {
+      // The whole batch never reached Expo (network/5xx), so none of it landed.
+      summary.failed += batchSubs.length;
+      countError('request_failed');
       console.error('Failed to send Expo push batch:', error?.response?.data || error.message);
     }
   }
+
+  return summary;
 }
 
 /**
  * Send the "go fetch" trigger to every subscribed device.
  * Duplicates are already prevented by the UNIQUE dedupe_key, so no in-memory
  * dedup is needed here.
+ *
+ * Returns a per-transport delivery summary. This used to return nothing and
+ * merely console.error each rejection, so `/push/trigger` answered `success:
+ * true` even when Expo rejected 100% of tickets — which hid a total Android
+ * outage (missing FCM credentials) behind a green response for weeks.
  */
 async function sendPushToAllDevices() {
   const subscriptions = await getSubscriptions();
   console.log('Sending push to', subscriptions.length, 'subscriptions');
   const notificationPayload = "trigger";
+  const web = { attempted: 0, sent: 0, failed: 0, pruned: 0 };
 
   // Expo tokens go out as one (or few) batched request(s); everything else is
   // sent per-subscription below.
@@ -148,9 +168,10 @@ async function sendPushToAllDevices() {
   );
   const expoPromise = sendExpoPush(expoSubs);
 
-  const promises = subscriptions
-    .filter(({ platform }) => platform !== 'expo')
-    .map(async ({ subscription, platform }) => {
+  const webSubs = subscriptions.filter(({ platform }) => platform !== 'expo');
+  web.attempted = webSubs.length;
+
+  const promises = webSubs.map(async ({ subscription, platform }) => {
     const dedupeKey = dedupeKeyFor(subscription);
 
     // web-push requires a real `{ endpoint, keys }` subscription. Some legacy
@@ -160,6 +181,7 @@ async function sendPushToAllDevices() {
     if (!subscription?.endpoint) {
       console.log(`Pruning unsendable ${platform} subscription (no endpoint)`);
       await removeSubscription(dedupeKey);
+      web.pruned++;
       return;
     }
 
@@ -170,18 +192,23 @@ async function sendPushToAllDevices() {
       } else {
         webPush.setVapidDetails('mailto:ruskcoder@gradexis.com', webPublicKey, webPrivateKey);
       }
-      return await webPush.sendNotification(subscription, notificationPayload);
+      const result = await webPush.sendNotification(subscription, notificationPayload);
+      web.sent++;
+      return result;
     } catch (error) {
+      web.failed++;
       if (isGoneError(error)) {
         console.log('Pruning dead web subscription');
         await removeSubscription(dedupeKey);
+        web.pruned++;
       } else {
         console.error(`Failed to send notification to ${platform}:`, error);
       }
     }
   });
 
-  return Promise.all([expoPromise, ...promises]);
+  const [expo] = await Promise.all([expoPromise, ...promises]);
+  return { expo, web };
 }
 
 /**
