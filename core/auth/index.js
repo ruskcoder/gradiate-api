@@ -116,7 +116,40 @@ async function authenticate(req, platform, progressTracker) {
   const { loginType, loginData, existingSession } = validateBody(req, platform);
   progressTracker.update(4, 'Authenticating');
 
-  // Closure the reauth wrapper calls to transparently re-login on expiry.
+  /**
+   * Stamp everything that makes a session usable *and* re-usable onto it:
+   * identity, the resolved portal link, the login recipe, and a validation time.
+   *
+   * Both entry points must do this identically. `finish` prepares the session the
+   * request runs on; `relogin` prepares the replacement one swapped in mid-request
+   * by the reauth wrapper. When only `finish` stamped identity, a transparent
+   * relogin silently dropped `session.username` — which data functions read
+   * (hac/data/info.js) — and dropped `cache.username`, which is the only place an
+   * SSO login's username survives to the next request.
+   */
+  const stampSession = (session, link, username) => {
+    const resolvedUser = username || loginData.username || session.cache?.username || 'unknown';
+    session.setLoginMetadata(loginType, loginData);
+    session.username = resolvedUser;
+    // Persist the resolved district portal link (and username) in the session
+    // cache so they round-trip to the client and back. For SSO logins (ClassLink)
+    // the link is discovered by walking a dashboard tile and isn't in loginData —
+    // without stashing it here, every reused session would have to re-run the whole
+    // SSO dance just to rediscover where the portal lives.
+    if (link) session.cache.link = link;
+    if (resolvedUser !== 'unknown') session.cache.username = resolvedUser;
+    // Stamp a validation time so the next request carrying this session takes the
+    // no-network fast path (isSessionFresh) instead of re-authenticating. A session
+    // that has actually expired is still caught by the reauth wrapper on the next
+    // data call, which transparently re-logs-in.
+    session.setLastValidationTime(Date.now());
+    return resolvedUser;
+  };
+
+  // Closure the reauth wrapper calls to transparently re-login on expiry. The
+  // session it returns replaces the dead one inside the wrapper for the rest of
+  // the request, and is what routes.js serializes back to the client — so the
+  // caller transparently receives the NEW session rather than the expired one.
   const relogin = async () => {
     const fresh = await performLogin(platform, loginType, loginData, null);
     if (!fresh) throw new AuthenticationError('Re-authentication failed');
@@ -127,31 +160,12 @@ async function authenticate(req, platform, progressTracker) {
     if (fresh.mfaRequired) {
       throw new AuthenticationError('Session expired — please sign in again to re-verify two-factor');
     }
-    fresh.session.setLoginMetadata(loginType, loginData);
-    // Carry the freshly-discovered link + a validation stamp on the re-logged-in
-    // session so, once it's serialized back to the client, it takes the fast path
-    // on subsequent requests too (see finish()).
-    if (fresh.link) fresh.session.cache.link = fresh.link;
-    fresh.session.setLastValidationTime(Date.now());
+    stampSession(fresh.session, fresh.link, fresh.username);
     return { session: fresh.session, link: fresh.link };
   };
 
   const finish = (base, link, username) => {
-    const resolvedUser = username || loginData.username || base.cache?.username || 'unknown';
-    base.setLoginMetadata(loginType, loginData);
-    base.username = resolvedUser;
-    // Persist the resolved district portal link (and username) in the session
-    // cache so they round-trip to the client and back. For SSO logins (ClassLink)
-    // the link is discovered by walking a dashboard tile and isn't in loginData —
-    // without stashing it here, every reused session would have to re-run the whole
-    // SSO dance just to rediscover where the portal lives.
-    if (link) base.cache.link = link;
-    if (resolvedUser !== 'unknown') base.cache.username = resolvedUser;
-    // Stamp a validation time so the next request carrying this session takes the
-    // no-network fast path (isSessionFresh) instead of re-authenticating. A session
-    // that has actually expired is still caught by the reauth wrapper on the next
-    // data call, which transparently re-logs-in.
-    base.setLastValidationTime(Date.now());
+    const resolvedUser = stampSession(base, link, username);
     const session = platform.isSessionExpired
       ? createReauthSession(base, link, { isSessionExpired: platform.isSessionExpired, relogin })
       : base;

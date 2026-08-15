@@ -32,6 +32,22 @@ function createReauthSession(baseSession, link, { isSessionExpired, relogin }) {
   // as-is.
   const resolveData = (data) => (typeof data === 'function' ? data() : data);
 
+  // Some portals answer an expired session with a status code rather than a
+  // logged-out HTML page. axios throws on those, so they never reach the body
+  // check and would surface as a hard error instead of a silent re-login.
+  const AUTH_ERROR_STATUSES = new Set([401, 403]);
+
+  // Swap in a freshly-logged-in session, at most `maxAttempts` times per call.
+  // Returns false when the budget is spent so the caller rethrows / gives up.
+  const attemptRelogin = async () => {
+    if (!relogin || state.attempts >= state.maxAttempts) return false;
+    state.attempts++;
+    const fresh = await relogin();
+    if (fresh?.session) state.baseSession = fresh.session;
+    if (fresh?.link) state.link = fresh.link;
+    return true;
+  };
+
   // Shared expiry-detect + one-shot relogin + retry, used for both GET and POST.
   // On POST the body is re-resolved after the relogin so token-bearing requests
   // are rebuilt against the refreshed session.
@@ -44,18 +60,27 @@ function createReauthSession(baseSession, link, { isSessionExpired, relogin }) {
       return state.baseSession.get(url, rest[0]);
     };
 
-    let response = await send();
-    const expired = typeof isSessionExpired === 'function' && isSessionExpired(response.data);
-    if (expired && relogin && state.attempts < state.maxAttempts) {
-      state.attempts++;
-      const fresh = await relogin();
-      if (fresh?.session) state.baseSession = fresh.session;
-      if (fresh?.link) state.link = fresh.link;
-      response = await send();
-    }
+    try {
+      let response;
+      try {
+        response = await send();
+      } catch (error) {
+        if (!AUTH_ERROR_STATUSES.has(error?.response?.status)) throw error;
+        if (!(await attemptRelogin())) throw error;
+        return await send();
+      }
 
-    state.attempts = 0;
-    return response;
+      const expired = typeof isSessionExpired === 'function' && isSessionExpired(response.data);
+      if (expired && (await attemptRelogin())) {
+        response = await send();
+      }
+      return response;
+    } finally {
+      // Reset in `finally`, not after the retry: a relogin that throws used to
+      // leave `attempts` pinned at the cap, so that proxy would never attempt
+      // another re-login and every later call on it failed as expired.
+      state.attempts = 0;
+    }
   };
 
   const guardedGet = guarded('get');
