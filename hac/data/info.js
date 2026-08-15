@@ -1,8 +1,8 @@
 /**
  * Student info — scrapes the Registration page for profile fields, pulls the
- * district name from the login splash banner, and records the referral row.
+ * district name from the login splash banner, and records the user's login.
  *
- * The referral bookkeeping (addUser) and district extraction used to live in the
+ * The user bookkeeping (recordLogin) and district extraction used to live in the
  * HAC route; under the registry model that business logic belongs to the data
  * function, not core.
  */
@@ -11,10 +11,9 @@ import process from 'process';
 import * as cheerio from 'cheerio';
 import { HAC_ENDPOINTS } from '../config/constants.js';
 import { checkSessionValidity } from '../auth/credentials.js';
-import { APIError } from '../../core/errors.js';
-import { addUser } from '../../referrals.js';
+import { recordLogin } from '../../referrals.js';
 
-async function info(session, link, options) {
+async function info(session, link) {
   const registration = await session.get(link + HAC_ENDPOINTS.REGISTRATION);
   checkSessionValidity(registration);
 
@@ -48,16 +47,12 @@ async function info(session, link, options) {
   }
 
   const username = (session.username || '').toLowerCase();
-  const ref = await addUser(username, studentInfo.school, options?.referralCode);
-  if (ref.success === false) {
-    throw new APIError(ref.message, 409);
-  }
+  const { firstLoggedIn } = await recordLogin(username, studentInfo.school);
 
   return {
     username: session.username,
     link,
-    referralCode: ref.referralCode,
-    numReferrals: ref.numReferrals,
+    firstLoggedIn,
     ...studentInfo,
   };
 }

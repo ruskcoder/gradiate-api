@@ -38,7 +38,6 @@ app.use((err, req, res, next) => {
 });
 
 import * as webPushService from './web-push.js';
-import { getReferralInfo } from './referrals.js';
 import supabase from './database.js';
 import { createPlatformRoutes } from './core/index.js';
 import hac from './hac/index.js';
@@ -95,7 +94,7 @@ const globalLimiter = rateLimit({
 app.use(globalLimiter);
 
 // Tighter limit for unauthenticated write/enumeration endpoints (subscription
-// spam, referral-code enumeration).
+// spam, username enumeration).
 const strictLimiter = rateLimit({
   windowMs: 60 * 1000,
   limit: Number(process.env.STRICT_RATE_LIMIT_PER_MIN) || 20,
@@ -114,6 +113,10 @@ app.get('/', (req, res) => {
   res.sendFile(__dirname + '/index.html');
 });
 
+// Kept at its original path so existing web/mobile builds don't 404, but the
+// referral programme is gone: this now only answers "is this user blocked?".
+// That check reads BLOCKED_USERS, never the database, so it no longer 500s for a
+// username that has never signed in.
 app.get('/referral', strictLimiter, async (req, res) => {
   try {
     let { username } = req.query;
@@ -124,11 +127,9 @@ app.get('/referral', strictLimiter, async (req, res) => {
     const blockedList = blockedEnv.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
     const blocked = blockedList.includes(username);
 
-    const { referralCode, numReferrals } = await getReferralInfo(username);
-
-    res.json({ referralCode, numReferrals, blocked });
+    res.json({ blocked });
   } catch (error) {
-    console.error('Referral lookup failed:', error);
+    console.error('Blocked-user lookup failed:', error);
     res.status(500).json({ error: 'Internal Server Error' });
   }
 });

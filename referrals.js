@@ -1,111 +1,62 @@
+/**
+ * User bookkeeping: one row per (username, school), recording when we first saw
+ * that student sign in.
+ *
+ * This used to run a referral programme (a generated code per user, a
+ * `referredFrom` link, and a `numReferrals` tally). That's gone — the table now
+ * exists purely to know who uses the app and since when.
+ */
+
 import supabase from './database.js';
 
-function generateCode() { 
-    const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    let code = '';
-    for (let i = 0; i < 6; i++) {
-        code += characters.charAt(Math.floor(Math.random() * characters.length));
-    }
-    return code;
-}
+/**
+ * Record that `username` just signed in, and report when they FIRST did.
+ *
+ * A returning user's `firstLoggedIn` is never rewritten — only mutable profile
+ * fields (school) are refreshed — so the timestamp keeps meaning "first ever
+ * seen" rather than "seen most recently".
+ *
+ * @returns {Promise<{firstLoggedIn: string|null}>}
+ */
+async function recordLogin(username, school) {
+  // The unique index is on (username, school), so a student who transfers can
+  // legitimately own more than one row. Take the earliest — that's the real
+  // first login — instead of assuming a single row like the old code did.
+  const { data: existing, error: lookupError } = await supabase
+    .from('referrals')
+    .select('firstLoggedIn')
+    .eq('username', username)
+    .order('firstLoggedIn', { ascending: true, nullsFirst: true })
+    .limit(1);
 
-async function userExists(username) {
-    const { data, error, count } = await supabase
+  if (lookupError) throw lookupError;
+
+  if (existing && existing.length > 0) {
+    if (school) {
+      const { error: updateError } = await supabase
         .from('referrals')
-        .select('*', { count: 'exact', head: true })
+        .update({ school })
         .eq('username', username);
-    
-    if (error) throw error;
-    return count > 0;
-}
-
-async function referralCodeExists(code) {
-    const { error, count } = await supabase
-        .from('referrals')
-        .select('*', { count: 'exact', head: true })
-        .eq('referralCode', code);
-    
-    if (error) throw error;
-    return count > 0;
-}
-
-async function addUser(username, school, referredFrom = null) {
-    if (referredFrom) referredFrom = referredFrom.toUpperCase();
-
-    if (await userExists(username)) {
-        if (referredFrom) {
-            return {success: false, message: 'Referral codes must be blank for existing users' };
-        }
-
-        const updateFields = {};
-        if (school) updateFields.school = school;
-
-        if (Object.keys(updateFields).length > 0) {
-            const { error: updateError } = await supabase
-                .from('referrals')
-                .update(updateFields)
-                .eq('username', username);
-            if (updateError) console.error('Failed to update existing user fields:', updateError);
-        }
-
-        const { data, error } = await supabase
-            .from('referrals')
-            .select('referralCode, numReferrals')
-            .eq('username', username)
-            .single();
-        
-        if (error) throw error;
-        return {success: true, referralCode: data.referralCode, numReferrals: data.numReferrals};
+      // Refreshing the school is best-effort; failing it shouldn't cost the
+      // caller their student info.
+      if (updateError) console.error('Failed to update existing user fields:', updateError);
     }
+    return { firstLoggedIn: existing[0].firstLoggedIn };
+  }
 
-    if (referredFrom && !await referralCodeExists(referredFrom)) {
-        return {success: false, message: 'Invalid referral code'};
-    }
+  // `firstLoggedIn` is deliberately omitted so the column default (now()) fills
+  // it: the timestamp then comes from the database clock rather than from
+  // whichever API instance happened to serve the request.
+  const { data: inserted, error } = await supabase
+    .from('referrals')
+    .insert([{ username, school }])
+    .select('firstLoggedIn')
+    .single();
 
-    const userCode = generateCode();
-    const { error } = await supabase
-        .from('referrals')
-        .insert([{ username, referredFrom, referralCode: userCode, numReferrals: 0, school }]);
-
-    if (error) throw error;
-
-    if (referredFrom) {
-        const { data: referrerData, error: fetchError } = await supabase
-            .from('referrals')
-            .select('numReferrals')
-            .eq('referralCode', referredFrom)
-            .single();
-
-        if (!fetchError && referrerData) {
-            const { error: updateError } = await supabase
-                .from('referrals')
-                .update({ numReferrals: referrerData.numReferrals + 1 })
-                .eq('referralCode', referredFrom);
-
-            if (updateError) console.error('Failed to update referrer count:', updateError);
-        } else {
-            console.error('Failed to fetch referrer data:', fetchError);
-        }
-    }
-
-    return {success: true, referralCode: userCode, numReferrals: 0};
-}
-
-async function getReferralInfo(username) { 
-    const { data, error } = await supabase
-        .from('referrals')
-        .select('referralCode, numReferrals')
-        .eq('username', username)
-        .single();
-    
-    if (error) throw error;
-    if (!data) {
-        throw new Error(`Username '${username}' not found`);
-    }
-    return { referralCode: data.referralCode, numReferrals: data.numReferrals || 0 };
+  if (error) throw error;
+  return { firstLoggedIn: inserted.firstLoggedIn };
 }
 
 export {
-    addUser,
-    getReferralInfo
-}
+  recordLogin
+};
