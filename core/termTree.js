@@ -183,8 +183,36 @@ function nestByFrequency(orderedLabels) {
   return stack;
 }
 
+/**
+ * Group columns by label family instead of by date/cascade hierarchy: one top
+ * tab per letter type (PR, SM, Q, …) whose children are every column of that
+ * family, in their original order. A group root is NOT a grade column (it has
+ * no average of its own) and is flagged `group: true`; a family with a single
+ * column (e.g. Y1) is emitted as a plain leaf tab. Groups are ordered coarsest
+ * first (fewest members), ties by first appearance.
+ */
+function groupByFamily(orderedLabels) {
+  const families = new Map();
+  for (const l of orderedLabels) {
+    const f = familyShape(l);
+    if (!families.has(f)) families.set(f, []);
+    families.get(f).push(l);
+  }
+  const labelSet = new Set(orderedLabels);
+  const entries = [...families.entries()];
+  const firstIdx = (members) => orderedLabels.indexOf(members[0]);
+  entries.sort((a, b) => a[1].length - b[1].length || firstIdx(a[1]) - firstIdx(b[1]));
+  return entries.map(([family, members]) => {
+    if (members.length === 1) return node(members[0]);
+    let label = family === 'ORD' ? 'Terms' : family === 'NUM' ? '#' : family;
+    while (labelSet.has(label)) label += '*'; // never collide with a real column
+    return { label, group: true, children: members.map((m) => node(m)) };
+  });
+}
+
 export {
   node,
+  groupByFamily,
   forestHasChildren,
   flattenForest,
   pathToLabel,

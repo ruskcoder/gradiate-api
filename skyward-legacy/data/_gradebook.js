@@ -14,7 +14,7 @@
 import * as cheerio from 'cheerio';
 import { SKYWARD_ENDPOINTS } from '../config/constants.js';
 import { skywardTokens, sessionId, checkSessionValidity, tokenBody } from '../auth/credentials.js';
-import { nestByFrequency, forestHasChildren, pathToLabel } from '../../core/termTree.js';
+import { nestByFrequency, groupByFamily, forestHasChildren, pathToLabel } from '../../core/termTree.js';
 
 // ---------------------------------------------------------------------------
 // Fetch: gradebook HTML + harvest every dynamic identifier we need later.
@@ -140,7 +140,7 @@ function parseGradebook(htmlContent) {
   const gm = /stuGradesGrid_(\d+)_\d+/.exec(htmlContent);
   const studentId = gm ? gm[1] : '';
 
-  const { termList, termTree, hasSubterms } = extractTermHierarchy(htmlContent);
+  const { termList, termTree, cascade, hasSubterms } = extractTermHierarchy(htmlContent);
 
   const classNames = extractClassInfo(htmlContent, studentId || '\\d+');
 
@@ -265,8 +265,10 @@ function parseGradebook(htmlContent) {
   // — makes the UI default to the bottom-most current term (e.g. PR6), and
   // `currentTerms` is its ancestor path (coarsest→finest, e.g. SM2 → 3RD → PR6),
   // so notifications can fire for every active level. Mirrors PowerSchool.
-  const term = pickCurrentLeaf(termTree, termList, classes);
-  const currentTerms = term ? pathToLabel(termTree, term) : [];
+  // (The frequency cascade is still used internally to find leaves/ancestors;
+  // the exported `termTree` is grouped by letter type.)
+  const term = pickCurrentLeaf(cascade, termList, classes);
+  const currentTerms = term ? pathToLabel(cascade, term) : [];
   return { hasSubterms, termList, termTree, term, currentTerms, classes };
 }
 
@@ -399,12 +401,13 @@ function extractTermHierarchy(htmlContent) {
     }
   }
 
-  const termTree = nestByFrequency(orderedLabels);
+  const cascade = nestByFrequency(orderedLabels);
+  const termTree = groupByFamily(orderedLabels);
   const hasSubterms = forestHasChildren(termTree);
 
-  // termList stays flat: every column, in chronological order. termTree carries
-  // the nesting the UI renders as cascading subtabs.
-  return { orderedLabels, termList: [...orderedLabels], termTree, hasSubterms };
+  // termList stays flat: every column, in chronological order. termTree groups
+  // the columns by letter type (PR, 1ST/2ND…, SM) for the UI's tabs/subtabs.
+  return { orderedLabels, termList: [...orderedLabels], termTree, cascade, hasSubterms };
 }
 
 function extractClassInfo(htmlContent, studentId = '272676') {

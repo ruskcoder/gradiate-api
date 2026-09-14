@@ -18,7 +18,7 @@
 import * as cheerio from 'cheerio';
 import { ENDPOINTS } from '../config/constants.js';
 import { checkSessionValidity } from '../auth/credentials.js';
-import { nestByContainment, forestHasChildren } from '../../core/termTree.js';
+import { groupByFamily, forestHasChildren } from '../../core/termTree.js';
 
 // Header labels that are structural, not term columns.
 const NON_TERM_HEADERS = new Set(['Exp', 'Course', 'Absences', 'Tardies', '']);
@@ -178,9 +178,9 @@ function parseGradebook($, options = {}) {
   // A term column is real only if at least one class is in session for it (has a link).
   const termList = termLabels.filter((label) => classes.some((c) => c._hrefs[label]));
 
-  // Cascade the flat columns into a nested forest using each term's own date
-  // window (P1 ⊂ C1 ⊂ … ⊂ Y1). Coarsest terms end up as roots (top tabs).
-  const termTree = nestByContainment(termList, (label) => termDateRange(classes, label));
+  // Group the flat columns by letter type (P, C, S, …): one top tab per family,
+  // its columns as subtabs.
+  const termTree = groupByFamily(termList);
   const hasSubterms = forestHasChildren(termTree);
 
   const currentTerms = activeTerms(termList, classes);
