@@ -49,39 +49,9 @@ import demo from './demo/index.js';
 // at its declared prefix. Add a platform by importing it and pushing it here.
 const platforms = [hac, skywardLegacy, powerschool];
 
-// CORS: the browser web app is the only cross-origin caller that sends an
-// Origin header. Native apps (Expo fetch/XHR) send no Origin, so `!origin`
-// requests are allowed through. Everything else is rejected instead of the
-// previous wildcard `app.use(cors())` which let any website call the API with
-// credentials. Override the allowlist with CORS_ORIGINS (comma-separated).
-//
-// Both the old gradexis.app and the new gradiate.app origins are allowed: the
-// rename is still in flight and the deployed web app is served from either.
-const allowedOrigins = (process.env.CORS_ORIGINS ||
-  'https://web.gradiate.app,https://gradiate.app,https://web.gradexis.app,https://gradexis.app')
-  .split(',')
-  .map((s) => s.trim())
-  .filter(Boolean);
-
-// In non-production, also allow any localhost / 127.0.0.1 origin (any port) so
-// the web app's dev server (Vite, etc.) can call a locally-running API. Never
-// loosened in production — there the allowlist above is the only thing accepted.
-const isDevOrigin = (origin) =>
-  process.env.NODE_ENV !== 'production' &&
-  /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
-
-app.use(
-  cors({
-    origin(origin, callback) {
-      if (!origin || allowedOrigins.includes(origin) || isDevOrigin(origin)) {
-        return callback(null, true);
-      }
-      const err = new Error('Not allowed by CORS');
-      err.status = 403; // a rejected origin is a client error, not a 500
-      return callback(err);
-    },
-  })
-);
+// All origins are allowed (Vercel preview deployments use unpredictable hosts).
+// The API uses no cookies/credentials from the browser, so this is safe.
+app.use(cors());
 
 // Global rate limit — a coarse ceiling against scraping/abuse. The data routes
 // make outbound requests to school portals on the caller's behalf, so an
