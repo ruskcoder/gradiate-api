@@ -19,9 +19,18 @@ const app = express();
 // rate limiter keys off the real client IP rather than the proxy's.
 app.set('trust proxy', 1);
 
-// Baseline security headers (nosniff, frameguard, HSTS, etc.). The API serves
-// JSON + a tiny static site, so the permissive defaults are fine.
-app.use(helmet());
+// Baseline security headers (nosniff, frameguard, HSTS, etc.). The CSP is
+// loosened just enough for the docs site: inline styles (syntax highlighting)
+// and `connect-src *` so the playground can target another API host.
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      'style-src': ["'self'", "'unsafe-inline'"],
+      'img-src': ["'self'", 'data:', 'https:'],
+      'connect-src': ["'self'", '*'],
+    },
+  },
+}));
 
 // Cap request bodies. Login/session envelopes are small; without a limit a
 // client could POST an arbitrarily large body and exhaust memory.
@@ -81,8 +90,15 @@ for (const platform of platforms) {
 app.use('/demo', demo);
 
 app.use('/static', express.static(__dirname + '/static'));
-app.get('/', (req, res) => {
-  res.sendFile(__dirname + '/index.html');
+
+// API docs: a prebuilt SPA (docs/ → `npm run docs:build`). Client-side routes
+// are GET-only and never collide with the POST platform routes.
+const docsDist = path.join(__dirname, 'docs', 'dist');
+app.use(express.static(docsDist, { index: false }));
+app.get(['/', '/guides/*', '/api/*', '/platforms', '/platforms/*'], (req, res) => {
+  res.sendFile(path.join(docsDist, 'index.html'), (err) => {
+    if (err) res.status(404).send('Docs not built. Run `npm run docs:build`.');
+  });
 });
 
 // Kept at its original path so existing web/mobile builds don't 404, but the

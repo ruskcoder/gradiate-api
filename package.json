@@ -21,7 +21,10 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "nodemon index.js",
     "start": "node index.js",
-    "live": "nodemon index.js"
+    "live": "nodemon index.js",
+    "docs:build": "npm --prefix docs install && npm --prefix docs run build",
+    "docs:dev": "npm --prefix docs run dev",
+    "vercel-build": "npm run docs:build"
   },
   "nodemonConfig": {
     "ignore": [
