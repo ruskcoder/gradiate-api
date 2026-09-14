@@ -36,12 +36,21 @@ function createMonthData(viewState = '', eventValidation = '', eventArgument = '
 
 function processAttendanceDate(dateQuery) {
   if (!dateQuery) return null;
-  const [reqMonth, reqYear] = dateQuery.split('-');
+  const [reqMonth = '', reqYear] = String(dateQuery).split('-');
   const monthIndex = MONTH_INPUTS[reqMonth.toLowerCase()];
-  if (monthIndex === undefined) {
+  const year = parseInt(reqYear);
+  // A missing/garbled year used to yield a NaN month code, which never matches
+  // and burned all 15 navigation postbacks against the portal.
+  if (monthIndex === undefined || isNaN(year)) {
     throw new ValidationError(ERROR_MESSAGES.INVALID_MONTH);
   }
-  return { monthIndex, reqYear: parseInt(reqYear) };
+  return { monthIndex, reqYear: year };
+}
+
+/** Month code from a calendar prev/next link's `__doPostBack(…,'V1234')` href. */
+function monthCodeFromLink(el) {
+  const part = (el.attr('href') || '').split('\'')[3];
+  return part ? parseInt(part.slice(1)) : NaN;
 }
 
 function calculateMonthCode(year, monthIndex) {
@@ -73,15 +82,17 @@ async function navigateToMonth(session, link, targetMonthCode, initialCheerio) {
     const nextElement = $('a[title="Go to the next month"]');
     let prev, next;
 
-    if (!nextElement.text()) {
-      prev = parseInt(prevElement.attr('href').split('\'')[3].slice(1));
-      if (targetMonthCode > prev) return $;
+    if (!nextElement.text() && !prevElement.text()) {
+      return $; // no navigation links at all (logged out / unexpected page)
+    } else if (!nextElement.text()) {
+      prev = monthCodeFromLink(prevElement);
+      if (isNaN(prev) || targetMonthCode > prev) return $;
     } else if (!prevElement.text()) {
-      next = parseInt(nextElement.attr('href').split('\'')[3].slice(1));
-      if (targetMonthCode < next) return $;
+      next = monthCodeFromLink(nextElement);
+      if (isNaN(next) || targetMonthCode < next) return $;
     } else {
-      prev = parseInt(prevElement.attr('href').split('\'')[3].slice(1));
-      next = parseInt(nextElement.attr('href').split('\'')[3].slice(1));
+      prev = monthCodeFromLink(prevElement);
+      next = monthCodeFromLink(nextElement);
     }
 
     const monthData = createMonthData(
@@ -162,23 +173,18 @@ async function attendance(session, link, options) {
   const requestedDate = options.date ? processAttendanceDate(options.date) : null;
   const targetMonthCode = requestedDate ? calculateMonthCode(requestedDate.reqYear, requestedDate.monthIndex) : null;
 
-  const cachedState = session.cache.attendanceState;
-  let $, currentMonthInfo;
-
-  if (cachedState?.$) {
-    $ = cachedState.$;
-    currentMonthInfo = cachedState.monthInfo;
-  } else {
-    const attendanceResponse = await session.get(link + HAC_ENDPOINTS.ATTENDANCE);
-    checkSessionValidity(attendanceResponse);
-    $ = cheerio.load(attendanceResponse.data);
-    currentMonthInfo = extractCurrentMonthInfo($);
-    session.cache.attendanceState = { $, monthInfo: currentMonthInfo };
-  }
+  // Always fetch fresh. This used to stash the cheerio `$` in session.cache, which
+  // is serialized to the client: the function was silently dropped, the stale
+  // month info round-tripped, and a client-sent truthy `attendanceState.$` was
+  // then called as a function and crashed the route.
+  if (session.cache) delete session.cache.attendanceState;
+  const attendanceResponse = await session.get(link + HAC_ENDPOINTS.ATTENDANCE);
+  checkSessionValidity(attendanceResponse);
+  let $ = cheerio.load(attendanceResponse.data);
+  const currentMonthInfo = extractCurrentMonthInfo($);
 
   if (targetMonthCode && targetMonthCode !== currentMonthInfo.monthCode) {
     $ = await navigateToMonth(session, link, targetMonthCode, $);
-    session.cache.attendanceState = { $, monthInfo: extractCurrentMonthInfo($) };
   }
 
   return extractAttendanceData($);

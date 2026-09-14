@@ -34,7 +34,9 @@ function extractViewStateData($) {
   return {
     viewstate: $('input[name="__VIEWSTATE"]').val(),
     eventvalidation: $('input[name="__EVENTVALIDATION"]').val(),
-    year: $('select[name="ctl00$plnMain$ddlReportCardRuns"] option').eq(1).val().substring(2),
+    // A dropdown with fewer than two runs (start of year / summer) has no option
+    // at index 1; `.val()` is then undefined and `.substring` used to throw a 500.
+    year: ($('select[name="ctl00$plnMain$ddlReportCardRuns"] option').eq(1).val() || '').substring(2),
     term: $('select[name="ctl00$plnMain$ddlReportCardRuns"] option[selected="selected"]').text().trim(),
   };
 }

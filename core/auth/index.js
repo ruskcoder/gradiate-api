@@ -15,7 +15,7 @@
 
 import { createSession, restoreCookiesIntoSession, seedCookiesIntoSession } from '../session.js';
 import { createReauthSession } from '../reauthSession.js';
-import { defaultFormatLink } from '../platform.js';
+import { defaultFormatLink, assertSafeHttpUrl } from '../platform.js';
 import { AuthenticationError, ValidationError, APIError } from '../errors.js';
 import { loginClassLink } from './classlink.js';
 import { loginMicrosoft } from './microsoft.js';
@@ -207,7 +207,14 @@ async function authenticate(req, platform, progressTracker) {
     // discovered during the original login and stashed in the session cache. Fall
     // back to it so a reused SSO session never has to re-run ClassLink just to
     // relocate the district portal.
-    const link = resolveLink(platform, loginData) || base.cache?.link;
+    // `cache.link` is client-supplied, so it must pass the same SSRF guard as a
+    // loginData link — otherwise a forged session could point the server at an
+    // internal host. An unsafe/garbled one is dropped and a fresh login runs.
+    let cachedLink;
+    try {
+      cachedLink = base.cache?.link ? assertSafeHttpUrl(String(base.cache.link)) : undefined;
+    } catch { cachedLink = undefined; }
+    const link = resolveLink(platform, loginData) || cachedLink;
 
     if (base.isSessionFresh(5)) {
       if (link) return finish(base, link, loginData.username);

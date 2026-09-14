@@ -21,8 +21,13 @@ function createReauthSession(baseSession, link, { isSessionExpired, relogin }) {
   const state = {
     baseSession,
     link,
-    attempts: 0,
-    maxAttempts: 1,
+    // Bumped on every successful swap. A request that started on an older
+    // generation just retries on the new session instead of logging in again.
+    generation: 0,
+    // Shared in-flight relogin, so parallel requests that all see the expired
+    // page trigger ONE login rather than N racing ones (which, for portals that
+    // allow a single live session, invalidate each other).
+    inflight: null,
   };
 
   // `data` may be a value or a `() => value` thunk. Portals whose request body
@@ -37,14 +42,24 @@ function createReauthSession(baseSession, link, { isSessionExpired, relogin }) {
   // check and would surface as a hard error instead of a silent re-login.
   const AUTH_ERROR_STATUSES = new Set([401, 403]);
 
-  // Swap in a freshly-logged-in session, at most `maxAttempts` times per call.
-  // Returns false when the budget is spent so the caller rethrows / gives up.
-  const attemptRelogin = async () => {
-    if (!relogin || state.attempts >= state.maxAttempts) return false;
-    state.attempts++;
-    const fresh = await relogin();
-    if (fresh?.session) state.baseSession = fresh.session;
-    if (fresh?.link) state.link = fresh.link;
+  // Ensure the session is newer than `seenGeneration`. Returns false only when no
+  // relogin is available. Each call retries at most once (the caller's budget).
+  const attemptRelogin = async (seenGeneration) => {
+    if (!relogin) return false;
+    if (state.generation !== seenGeneration) return true; // someone already swapped
+    if (!state.inflight) {
+      state.inflight = (async () => {
+        try {
+          const fresh = await relogin();
+          if (fresh?.session) state.baseSession = fresh.session;
+          if (fresh?.link) state.link = fresh.link;
+          state.generation++;
+        } finally {
+          state.inflight = null;
+        }
+      })();
+    }
+    await state.inflight;
     return true;
   };
 
@@ -60,27 +75,21 @@ function createReauthSession(baseSession, link, { isSessionExpired, relogin }) {
       return state.baseSession.get(url, rest[0]);
     };
 
+    const seen = state.generation;
+    let response;
     try {
-      let response;
-      try {
-        response = await send();
-      } catch (error) {
-        if (!AUTH_ERROR_STATUSES.has(error?.response?.status)) throw error;
-        if (!(await attemptRelogin())) throw error;
-        return await send();
-      }
-
-      const expired = typeof isSessionExpired === 'function' && isSessionExpired(response.data);
-      if (expired && (await attemptRelogin())) {
-        response = await send();
-      }
-      return response;
-    } finally {
-      // Reset in `finally`, not after the retry: a relogin that throws used to
-      // leave `attempts` pinned at the cap, so that proxy would never attempt
-      // another re-login and every later call on it failed as expired.
-      state.attempts = 0;
+      response = await send();
+    } catch (error) {
+      if (!AUTH_ERROR_STATUSES.has(error?.response?.status)) throw error;
+      if (!(await attemptRelogin(seen))) throw error;
+      return send();
     }
+
+    const expired = typeof isSessionExpired === 'function' && isSessionExpired(response.data);
+    if (expired && (await attemptRelogin(seen))) {
+      response = await send();
+    }
+    return response;
   };
 
   const guardedGet = guarded('get');

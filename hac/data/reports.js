@@ -128,7 +128,7 @@ function extractTranscriptData($) {
     const semester = {};
 
     $(element).find('table > tbody > tr > td > span').each((i, el) => {
-      const id = $(el).attr('id');
+      const id = $(el).attr('id') || '';
       if (id.includes('YearValue')) semester.year = $(el).text().trim();
       else if (id.includes('GroupValue')) semester.semester = $(el).text().trim();
       else if (id.includes('GradeValue')) semester.grade = $(el).text().trim();
@@ -146,7 +146,7 @@ function extractTranscriptData($) {
     semester.data = courseData;
 
     $(element).find('table:nth-child(3) > tbody > tr > td > label').each((i, el) => {
-      if ($(el).attr('id').includes('CreditValue')) semester.credits = $(el).text().trim();
+      if (($(el).attr('id') || '').includes('CreditValue')) semester.credits = $(el).text().trim();
     });
 
     transcript[`${semester.year} - Semester ${semester.semester}`] = semester;
@@ -156,7 +156,7 @@ function extractTranscriptData($) {
     let text = '';
     let value = '';
     $(element).find('td > span').each((i, el) => {
-      const id = $(el).attr('id');
+      const id = $(el).attr('id') || '';
       if (id.includes('GPADescr')) text = $(el).text().trim();
       if (id.includes('GPACum')) value = $(el).text().trim();
       if (id.includes('GPARank')) transcript.rank = $(el).text().trim();

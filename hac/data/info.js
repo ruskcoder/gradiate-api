@@ -47,7 +47,13 @@ async function info(session, link) {
   }
 
   const username = (session.username || '').toLowerCase();
-  const { firstLoggedIn } = await recordLogin(username, studentInfo.school);
+  // Bookkeeping only — a Supabase hiccup must not cost the user their info.
+  let firstLoggedIn = null;
+  try {
+    ({ firstLoggedIn } = await recordLogin(username, studentInfo.school));
+  } catch (error) {
+    console.error('recordLogin failed:', error);
+  }
 
   return {
     username: session.username,

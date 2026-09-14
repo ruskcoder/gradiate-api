@@ -14,11 +14,21 @@ const webPrivateKey = process.env.VAPID_PRIVATE_KEY;
 const firebasePublicKey = process.env.FIREBASE_PUBLIC_KEY;
 const firebasePrivateKey = process.env.FIREBASE_PRIVATE_KEY;
 
-webPush.setVapidDetails(
-  'mailto:ruskcoder@gradexis.com',
-  webPublicKey,
-  webPrivateKey
-);
+const VAPID_SUBJECT = 'mailto:ruskcoder@gradexis.com';
+
+// VAPID details are passed per send instead of via the global
+// webPush.setVapidDetails: that call throws at import time when a key env var is
+// missing (crashing the whole API on boot), and mutating the global between
+// web / web-firebase sends is shared state across concurrent broadcasts.
+function vapidFor(platform) {
+  return platform === 'web-firebase'
+    ? { subject: VAPID_SUBJECT, publicKey: firebasePublicKey, privateKey: firebasePrivateKey }
+    : { subject: VAPID_SUBJECT, publicKey: webPublicKey, privateKey: webPrivateKey };
+}
+
+if (!webPrivateKey) {
+  console.warn('VAPID_PRIVATE_KEY is not set; web push sends will fail.');
+}
 
 /**
  * The stable identity of a subscription: web push endpoint or FCM token.
@@ -187,12 +197,9 @@ async function sendPushToAllDevices() {
 
     // web / web-firebase (both go out via VAPID web-push)
     try {
-      if (platform === 'web-firebase') {
-        webPush.setVapidDetails('mailto:ruskcoder@gradexis.com', firebasePublicKey, firebasePrivateKey);
-      } else {
-        webPush.setVapidDetails('mailto:ruskcoder@gradexis.com', webPublicKey, webPrivateKey);
-      }
-      const result = await webPush.sendNotification(subscription, notificationPayload);
+      const result = await webPush.sendNotification(subscription, notificationPayload, {
+        vapidDetails: vapidFor(platform),
+      });
       web.sent++;
       return result;
     } catch (error) {

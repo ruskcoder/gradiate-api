@@ -76,7 +76,9 @@ app.use(
       if (!origin || allowedOrigins.includes(origin) || isDevOrigin(origin)) {
         return callback(null, true);
       }
-      return callback(new Error('Not allowed by CORS'));
+      const err = new Error('Not allowed by CORS');
+      err.status = 403; // a rejected origin is a client error, not a 500
+      return callback(err);
     },
   })
 );
@@ -120,7 +122,10 @@ app.get('/', (req, res) => {
 app.get('/referral', strictLimiter, async (req, res) => {
   try {
     let { username } = req.query;
-    if (!username) return res.status(400).json({ error: 'username is required' });
+    // `?username=a&username=b` parses to an array; reject anything non-string.
+    if (!username || typeof username !== 'string') {
+      return res.status(400).json({ error: 'username is required' });
+    }
     username = username.toLowerCase();
 
     const blockedEnv = process.env.BLOCKED_USERS || '';
