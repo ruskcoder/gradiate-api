@@ -20,6 +20,7 @@ import {
   platforms,
 } from "@/lib/spec"
 import { usePlayground } from "@/lib/store"
+import { generateTypes } from "@/lib/typegen"
 import { cn } from "@/lib/utils"
 
 /** Platform-specific behaviour worth calling out on an endpoint page. */
@@ -52,6 +53,27 @@ const OP_NOTES: Record<string, Record<string, string>> = {
     hac: "Row keys come straight from the portal’s column headers.",
     "skyward-legacy": "Each row includes a `Marking Periods` column listing the terms it meets.",
   },
+}
+
+function ResponseExample({ example, typeName, schema }: { example: unknown; typeName: string; schema: unknown }) {
+  const [tab, setTab] = React.useState("json")
+  const types = React.useMemo(() => generateTypes(typeName, schema), [typeName, schema])
+  const code = tab === "json" ? JSON.stringify(example, null, 2) : types
+  return (
+    <Tabs value={tab} onValueChange={(v) => setTab(String(v))}>
+      <CodeBlock
+        code={code}
+        lang={tab === "json" ? "json" : "typescript"}
+        maxHeight="480px"
+        title={
+          <TabsList variant="line" className="h-8">
+            <TabsTrigger value="json" className="px-2 text-xs">JSON</TabsTrigger>
+            <TabsTrigger value="ts" className="px-2 text-xs">TypeScript</TabsTrigger>
+          </TabsList>
+        }
+      />
+    </Tabs>
+  )
 }
 
 function SupportMatrix({ opKey }: { opKey: string }) {
@@ -195,7 +217,11 @@ export function EndpointPage() {
           </Callout>
         )}
         <H3 id="response-example">Example</H3>
-        <CodeBlock code={JSON.stringify(response.example, null, 2)} lang="json" maxHeight="480px" />
+        <ResponseExample
+          example={response.example}
+          typeName={`${opKey[0].toUpperCase()}${opKey.slice(1)}Response`}
+          schema={response.schema}
+        />
 
         <H2 id="errors">Errors</H2>
         <div className="overflow-hidden rounded-lg border">

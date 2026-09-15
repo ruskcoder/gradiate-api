@@ -4,11 +4,11 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "node scripts/build-openapi.mjs && vite",
-    "build": "node scripts/build-openapi.mjs && tsc -b && vite build",
+    "dev": "npm run spec && vite",
+    "build": "npm run spec && tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "spec": "node scripts/build-openapi.mjs"
+    "spec": "node scripts/build-openapi.mjs && node scripts/build-extras.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",

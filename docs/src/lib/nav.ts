@@ -19,6 +19,8 @@ export const GUIDES: NavItem[] = [
   { title: "Streaming progress", href: "/guides/streaming" },
   { title: "Terms", href: "/guides/terms" },
   { title: "Errors & limits", href: "/guides/errors" },
+  { title: "Tools & SDKs", href: "/guides/tools" },
+  { title: "Changelog", href: "/guides/changelog" },
 ]
 
 const API_GROUPS = ["Authentication", "Student", "Grades", "Reports"]

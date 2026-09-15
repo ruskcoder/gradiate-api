@@ -547,7 +547,165 @@ function Errors() {
   )
 }
 
+function Tools() {
+  const resources = [
+    {
+      title: "OpenAPI 3.1 spec",
+      href: "/openapi.json",
+      body: "Generate clients with openapi-generator, openapi-typescript or Orval, or import into Insomnia, Bruno or Scalar.",
+    },
+    {
+      title: "Postman collection",
+      href: "/gradexis.postman_collection.json",
+      body: "Every endpoint for every platform, with {{baseUrl}}, {{username}} and {{password}} variables.",
+    },
+    {
+      title: "llms.txt",
+      href: "/llms.txt",
+      body: "A compact plain-text summary of the whole API to paste into Claude, Cursor or any AI coding assistant.",
+    },
+  ]
+  return (
+    <>
+      <PageHeader eyebrow="Getting started" title="Tools & SDKs" description="Machine-readable specs and shortcuts for working with the API." />
+      <div className="grid gap-3">
+        {resources.map((r) => (
+          <a key={r.href} href={r.href} target="_blank" rel="noreferrer" className="group flex items-start gap-4 rounded-xl border p-4 transition-colors hover:bg-muted/50">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 font-medium">
+                {r.title}
+                <code className="font-mono text-xs font-normal text-muted-foreground">{r.href}</code>
+              </div>
+              <p className="mt-1 text-sm text-muted-foreground">{r.body}</p>
+            </div>
+            <ArrowRightIcon className="mt-1 size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+          </a>
+        ))}
+      </div>
+
+      <H2>Generate a typed client</H2>
+      <P>
+        Every endpoint page also has a <strong>TypeScript</strong> tab on its response example. To generate types for the whole API:
+      </P>
+      <CodeBlock lang="bash" title="Terminal" code={`npx openapi-typescript https://your-api-host/openapi.json -o gradexis.d.ts`} />
+      <CodeBlock
+        lang="typescript"
+        title="client.ts"
+        className="mt-3"
+        code={`import type { paths } from "./gradexis"
+
+type ClassesBody = paths["/hac/classes"]["post"]["requestBody"]["content"]["application/json"]
+type ClassesResponse = paths["/hac/classes"]["post"]["responses"]["200"]["content"]["application/json"]
+
+export async function getClasses(body: ClassesBody): Promise<ClassesResponse> {
+  const res = await fetch("https://your-api-host/hac/classes", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  })
+  return res.json()
+}`}
+      />
+
+      <H2>Playground shortcuts</H2>
+      <UL>
+        <li>
+          <kbd className="inline-code">Ctrl</kbd> + <kbd className="inline-code">K</kbd> or <kbd className="inline-code">/</kbd> — search the docs.
+        </li>
+        <li>
+          <kbd className="inline-code">Ctrl</kbd> + <kbd className="inline-code">Enter</kbd> — send the current request.
+        </li>
+        <li>
+          <strong>History</strong> below each response keeps your last 20 requests (without passwords) — click one to restore it.
+        </li>
+        <li>Logging in once saves the session for every other endpoint in this browser.</li>
+      </UL>
+
+      <H2>Run the docs locally</H2>
+      <CodeBlock
+        lang="bash"
+        title="Terminal"
+        code={`npm run dev        # API on :3000
+npm run docs:dev   # docs on :5173, proxies API calls to :3000`}
+      />
+    </>
+  )
+}
+
+const CHANGELOG: { date: string; title: string; items: React.ReactNode[] }[] = [
+  {
+    date: "September 2026",
+    title: "Docs, spec & tooling",
+    items: [
+      <>New interactive documentation with a live playground for every endpoint.</>,
+      <>
+        OpenAPI 3.1 spec at <C>/openapi.json</C>, a Postman collection and <C>llms.txt</C>.
+      </>,
+    ],
+  },
+  {
+    date: "2026",
+    title: "Terms",
+    items: [
+      <>
+        <C>termTree</C> now groups terms by letter family, with synthetic <C>group: true</C> roots.
+      </>,
+      <>
+        New <C>currentTerms</C> field: every term active today, most specific last.
+      </>,
+    ],
+  },
+  {
+    date: "2026",
+    title: "Sessions & security",
+    items: [
+      <>
+        Sessions carry <C>cache.link</C>, so reused ClassLink sessions no longer re-run SSO on every request.
+      </>,
+      <>Portal links (including cached ones) are checked against private and loopback hosts.</>,
+      <>Concurrent re-logins for the same session are de-duplicated.</>,
+    ],
+  },
+  {
+    date: "2026",
+    title: "Platforms",
+    items: [
+      <>PowerSchool: multi-student parent accounts, Microsoft sign-in and bell schedules.</>,
+      <>Skyward Legacy: term/subterm tabs and merged fall/spring sections.</>,
+      <>HAC: ClassLink PIN and image two-factor authentication.</>,
+    ],
+  },
+]
+
+function Changelog() {
+  return (
+    <>
+      <PageHeader eyebrow="Getting started" title="Changelog" description="Notable API changes." />
+      <ol className="relative border-l">
+        {CHANGELOG.map((entry, i) => (
+          <li key={i} className="mb-10 ml-6 last:mb-0">
+            <span className="absolute -left-1.5 mt-1.5 size-3 rounded-full border-2 border-background bg-foreground/80" />
+            <div className="text-xs font-medium tracking-wide text-muted-foreground uppercase">{entry.date}</div>
+            <H3 id={slugifyTitle(entry.title)}>{entry.title}</H3>
+            <UL>
+              {entry.items.map((item, j) => (
+                <li key={j}>{item}</li>
+              ))}
+            </UL>
+          </li>
+        ))}
+      </ol>
+    </>
+  )
+}
+
+function slugifyTitle(t: string) {
+  return t.toLowerCase().replace(/[^a-z0-9]+/g, "-")
+}
+
 const GUIDE_PAGES: Record<string, () => React.ReactNode> = {
+  tools: Tools,
+  changelog: Changelog,
   quickstart: Quickstart,
   authentication: Authentication,
   sessions: Sessions,

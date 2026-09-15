@@ -16,6 +16,7 @@ function getHighlighter() {
       import("shiki/langs/python.mjs"),
       import("shiki/langs/javascript.mjs"),
       import("shiki/langs/json.mjs"),
+      import("shiki/langs/typescript.mjs"),
     ],
     engine: createJavaScriptRegexEngine(),
   })

@@ -1,5 +1,8 @@
 import * as React from "react"
-import { KeyRoundIcon, Loader2Icon, PlayIcon, ServerIcon, Trash2Icon } from "lucide-react"
+import { ChevronDownIcon, HistoryIcon, KeyRoundIcon, Loader2Icon, PlayIcon, ServerIcon, Trash2Icon } from "lucide-react"
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
+import { Kbd } from "@/components/ui/kbd"
+import { addHistory, clearHistory, timeAgo, useHistory, type HistoryEntry } from "@/lib/history"
 import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -117,6 +120,19 @@ export function Runner({ opKey, platformId }: { opKey: string; platformId: strin
     return b
   }, [isHelper, state, platform, loginFields, loginValues, loginType, optionValues, platformId])
 
+  // ⌘/Ctrl+Enter sends the request from anywhere on the page.
+  const runRef = React.useRef<() => void>(() => {})
+  React.useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault()
+        runRef.current()
+      }
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [])
+
   const snippet = generateSnippet(state.language, url, body)
   const langMeta = LANGUAGES.find((l) => l.id === state.language) ?? LANGUAGES[0]
 
@@ -172,7 +188,9 @@ export function Runner({ opKey, platformId }: { opKey: string; platformId: strin
       }
 
       const ok = res.ok && parsed?.success !== false
-      setResult({ status: res.status, ok, ms: Math.round(performance.now() - started), body: pretty })
+      const ms = Math.round(performance.now() - started)
+      setResult({ status: res.status, ok, ms, body: pretty })
+      addHistory({ opKey, platformId, url, status: res.status, ok, ms, body })
 
       if (parsed?.session && !isHelper) {
         set({ session: JSON.stringify(parsed.session), useSession: true })
@@ -197,6 +215,25 @@ export function Runner({ opKey, platformId }: { opKey: string; platformId: strin
       setRunning(false)
       setProgress(null)
     }
+  }
+
+  runRef.current = () => {
+    if (!running) run()
+  }
+
+  /** Load a past request's (non-secret) inputs back into the form. */
+  function restore(entry: HistoryEntry) {
+    const b = entry.body as Record<string, any>
+    if (entry.platformId !== state.platform) set({ platform: entry.platformId })
+    if (HELPER_KEYS.has(entry.opKey)) {
+      set({ helperLink: b.link || "" })
+    } else {
+      if (b.loginType) set({ loginType: { ...state.loginType, [entry.platformId]: b.loginType } })
+      for (const [k, v] of Object.entries<any>(b.loginData || {})) setLoginField(k, String(v))
+      for (const [k, v] of Object.entries<any>(b.options || {})) setOption(entry.opKey, k, String(v))
+      set({ stream: !!b.stream })
+    }
+    toast.success("Request restored", { description: "Secrets were not saved — re-enter the password if needed." })
   }
 
   return (
@@ -360,6 +397,7 @@ export function Runner({ opKey, platformId }: { opKey: string; platformId: strin
         <Button className="mt-3 w-full" onClick={run} disabled={running}>
           {running ? <Loader2Icon className="animate-spin" /> : <PlayIcon />}
           {running ? "Sending…" : "Send request"}
+          {!running && <Kbd className="ml-1 hidden bg-primary-foreground/15 text-primary-foreground sm:inline-flex">Ctrl ↵</Kbd>}
         </Button>
       </div>
 
@@ -407,6 +445,49 @@ export function Runner({ opKey, platformId }: { opKey: string; platformId: strin
         {result?.error && <div className="p-4 text-sm text-red-600 dark:text-red-400">{result.error}</div>}
         {result?.body && <CodeBlock code={result.body} lang="json" maxHeight="520px" className="rounded-none border-0 bg-transparent" />}
       </div>
+
+      <HistoryPanel onRestore={restore} />
     </div>
+  )
+}
+
+function HistoryPanel({ onRestore }: { onRestore: (e: HistoryEntry) => void }) {
+  const history = useHistory()
+  const [open, setOpen] = React.useState(false)
+  if (!history.length) return null
+  return (
+    <Collapsible open={open} onOpenChange={setOpen} className="rounded-xl border bg-card">
+      <div className="flex h-10 items-center justify-between px-4">
+        <CollapsibleTrigger className="flex flex-1 items-center gap-2 text-left text-sm font-medium">
+          <HistoryIcon className="size-4 text-muted-foreground" />
+          History
+          <span className="text-xs font-normal text-muted-foreground">{history.length}</span>
+          <ChevronDownIcon className={cn("ml-auto size-4 text-muted-foreground transition-transform", open && "rotate-180")} />
+        </CollapsibleTrigger>
+        {open && (
+          <Button variant="ghost" size="sm" className="ml-2 h-7 text-xs" onClick={clearHistory}>
+            Clear
+          </Button>
+        )}
+      </div>
+      <CollapsibleContent>
+        <ul className="max-h-72 divide-y overflow-y-auto border-t">
+          {history.map((h) => (
+            <li key={h.id}>
+              <button
+                type="button"
+                onClick={() => onRestore(h)}
+                className="flex w-full items-center gap-2 px-4 py-2 text-left text-xs transition-colors hover:bg-muted/50"
+              >
+                <span className={cn("size-1.5 shrink-0 rounded-full", h.ok ? "bg-emerald-500" : "bg-red-500")} />
+                <span className="font-mono">{h.status || "ERR"}</span>
+                <span className="min-w-0 flex-1 truncate font-mono text-muted-foreground">{new URL(h.url).pathname}</span>
+                <span className="shrink-0 text-muted-foreground">{h.ms} ms · {timeAgo(h.at)}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      </CollapsibleContent>
+    </Collapsible>
   )
 }

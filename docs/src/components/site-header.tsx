@@ -95,6 +95,43 @@ function SearchCommand() {
   )
 }
 
+/** Pings a platform's root route to show whether this API server is reachable. */
+function ApiStatus() {
+  const [state, setState] = React.useState<{ ok: boolean | null; ms?: number }>({ ok: null })
+
+  React.useEffect(() => {
+    let cancelled = false
+    const check = async () => {
+      const started = performance.now()
+      try {
+        const res = await fetch("/hac/", { method: "POST" })
+        if (!cancelled) setState({ ok: res.ok, ms: Math.round(performance.now() - started) })
+      } catch {
+        if (!cancelled) setState({ ok: false })
+      }
+    }
+    check()
+    const id = setInterval(check, 60_000)
+    return () => {
+      cancelled = true
+      clearInterval(id)
+    }
+  }, [])
+
+  const label = state.ok === null ? "Checking…" : state.ok ? `Operational · ${state.ms} ms` : "Unreachable"
+  return (
+    <div className="hidden items-center gap-2 rounded-md border px-2 py-1 text-xs text-muted-foreground lg:flex" title="API server status">
+      <span className="relative flex size-2">
+        {state.ok && <span className="absolute inline-flex size-full animate-ping rounded-full bg-emerald-400 opacity-60" />}
+        <span
+          className={`relative inline-flex size-2 rounded-full ${state.ok === null ? "bg-muted-foreground/40" : state.ok ? "bg-emerald-500" : "bg-red-500"}`}
+        />
+      </span>
+      {label}
+    </div>
+  )
+}
+
 export function SiteHeader() {
   const { pathname } = useLocation()
   const group = NAV.find((g) => g.items.some((i) => i.href === pathname))
@@ -114,6 +151,7 @@ export function SiteHeader() {
         )}
       </div>
       <div className="ml-auto flex flex-1 items-center justify-end gap-1.5 md:flex-none">
+        <ApiStatus />
         <SearchCommand />
         <ThemeToggle />
       </div>
