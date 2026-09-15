@@ -1,0 +1,68 @@
+# Gradexis API
+
+> One API for student grades across Home Access Center, PowerSchool and Skyward.
+
+Gradexis logs into school district portals on a student’s behalf and returns clean JSON. Every platform shares the same route table, request shape, session envelope, streaming protocol and error format.
+
+## Conventions
+
+- All routes are POST with a JSON body, mounted per platform: `/hac`, `/powerschool`, `/skyward-legacy`.
+- Body: `{ loginType, loginData, session?, options?, stream? }`.
+- Success: `{ success: true, ...data, session }`. Send `session` back on the next call (reused if validated <5 min ago; expired sessions re-login automatically using loginData).
+- Errors: `{ success: false, status, message }` with 400/401/404/429/500.
+- `stream: true` returns `{"percent","message"}` chunks separated by blank lines, then the final JSON.
+- ClassLink 2FA: login returns 200 `{ success:false, mfaRequired, mfaType, icons, session }`; retry with that session and `loginData.clMFA`.
+- Full spec: /openapi.json
+
+## Platforms
+
+### HAC (`/hac`)
+
+PowerSchool eSchoolPlus Home Access Center, common across Texas districts. Supports direct portal credentials and ClassLink SSO (with PIN/image 2FA).
+
+Login types: credentials, classlink, classlinkCredentials
+
+- A single HAC host can front several districts. Call `/hac/districts` with the portal link and, if `multiple` is true, pass the chosen district name as `loginData.district`.
+- Classes include full assignment `scores` (`scoresIncluded: true`) — no follow-up `/single-class` call is needed to show assignments.
+- Terms are flat run numbers (`"1"`–`"6"`); no `termTree` is returned.
+- `/attendance` accepts `options.date` as `Month-YYYY` (e.g. `March-2026`) to walk the calendar.
+- `/ipr` (interim progress reports) exists only on HAC.
+
+### PowerSchool (`/powerschool`)
+
+Guardian portal with multi-student parent accounts, date-driven term columns and Microsoft (Azure AD) sign-in via cookie handoff.
+
+Login types: credentials, microsoftSession
+
+- Call `/powerschool/authMethods` first — some districts are credentials-only, others Microsoft-only.
+- `microsoftSession` login: complete Microsoft sign-in in a browser/WebView, then send the resulting portal cookies as `loginData.cookies`.
+- Parent accounts: every response carries `students` and the active `studentId`. Pass `options.studentId` to switch child.
+- `/classes` returns averages only (`scoresIncluded: false`); fetch assignments per class with `/single-class`.
+- Terms are data-driven (P1/C1/S1/Y1…) and grouped by letter family in `termTree`; `currentTerms` lists every term active today.
+
+### Skyward Legacy (`/skyward-legacy`)
+
+Classic Skyward Student & Family Access. Credentials only; term/subterm tabs are reconstructed from the gradebook itself.
+
+Login types: credentials
+
+- `link` is the full `WService=…` base URL of the district’s Family Access.
+- `/classes` returns averages per term (`scoresIncluded: false`); `/single-class` fetches assignments for one term.
+- Term labels vary by district (PR1/1ST/SM1, T1–T4, Q1–Q4…). Fall/spring sections of the same course are merged.
+- No SSO login types and no `/ipr`.
+
+## Endpoints
+
+- **Log in** (/hac/login, /powerschool/login, /skyward-legacy/login): Authenticate and receive a session envelope.
+- **List districts** (/hac/districts): Detect multi-district HAC hosts (no auth).
+- **Auth methods** (/powerschool/authMethods): Which sign-in methods a district offers (no auth).
+- **Student info** (/hac/info, /powerschool/info, /skyward-legacy/info): Profile details for the logged-in student.
+- **Classes & grades** (/hac/classes, /powerschool/classes, /skyward-legacy/classes): Every class with its average for a term.
+- **Single class** (/hac/single-class, /powerschool/single-class, /skyward-legacy/single-class): One class with its assignments.
+- **Schedule** (/hac/schedule, /powerschool/schedule, /skyward-legacy/schedule): Class schedule rows.
+- **Bell schedule** (/powerschool/bellSchedule, /skyward-legacy/bellSchedule): Period start/end times.
+- **Attendance** (/hac/attendance, /powerschool/attendance, /skyward-legacy/attendance): Attendance events for a month.
+- **Teachers** (/hac/teachers, /powerschool/teachers, /skyward-legacy/teachers): Teachers and contact emails.
+- **Report cards** (/hac/reportCard, /powerschool/reportCard, /skyward-legacy/reportCard): Report card grades per grading run.
+- **Progress reports** (/hac/ipr): Interim progress reports (HAC only).
+- **Transcript** (/hac/transcript, /skyward-legacy/transcript): Academic history and GPA.

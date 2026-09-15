@@ -1,0 +1,1033 @@
+{
+  "info": {
+    "name": "Gradexis API",
+    "description": "Gradexis logs into school district portals on a student’s behalf and returns clean JSON. Every platform shares the same route table, request shape, session envelope, streaming protocol and error format.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000"
+    },
+    {
+      "key": "username",
+      "value": ""
+    },
+    {
+      "key": "password",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "HAC",
+      "description": "PowerSchool eSchoolPlus Home Access Center, common across Texas districts. Supports direct portal credentials and ClassLink SSO (with PIN/image 2FA).",
+      "item": [
+        {
+          "name": "List districts",
+          "request": {
+            "method": "POST",
+            "description": "Given a HAC portal link, reports whether the host fronts several districts. Show a district picker only when `multiple` is true, then send the chosen `name` as `loginData.district`.",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/hac/districts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "hac",
+                "districts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"link\": \"https://homeaccess.example.org\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Log in",
+          "request": {
+            "method": "POST",
+            "description": "Authenticates only — no data is fetched. A cheap validation probe runs so a bad password or expired session fails here rather than on your next call. Store the returned `session` and send it with every data request.\n\nFor ClassLink logins that hit a second factor, this returns `mfaRequired` (HTTP 200, `success: false`) — re-call with the returned `session` and `loginData.clMFA`.",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/hac/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "hac",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"loginType\": \"credentials\",\n  \"loginData\": {\n    \"link\": \"https://homeaccess.example.org\",\n    \"username\": \"{{username}}\",\n    \"password\": \"{{password}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Student info",
+          "request": {
+            "method": "POST",
+            "description": "Name, school, grade and other registration details. Fields a portal does not expose are returned as empty strings.",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/hac/info",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "hac",
+                "info"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"loginType\": \"credentials\",\n  \"loginData\": {\n    \"link\": \"https://homeaccess.example.org\",\n    \"username\": \"{{username}}\",\n    \"password\": \"{{password}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Classes & grades",
+          "request": {
+            "method": "POST",
+            "description": "Returns all classes for a term plus the term metadata needed to render a term picker. Pass `options.term` to switch terms; omit it for the current term.\n\n`scoresIncluded` tells you whether each class already carries its assignments (HAC) or whether you need `/single-class` (PowerSchool, Skyward).",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/hac/classes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "hac",
+                "classes"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"loginType\": \"credentials\",\n  \"loginData\": {\n    \"link\": \"https://homeaccess.example.org\",\n    \"username\": \"{{username}}\",\n    \"password\": \"{{password}}\"\n  },\n  \"options\": {\n    \"term\": \"\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Single class",
+          "request": {
+            "method": "POST",
+            "description": "Fetches one class and its assignment scores for a term. Identify the class with `options.class` (name) or, on PowerSchool and Skyward, `options.course` (id — more reliable when two sections share a name).",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/hac/single-class",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "hac",
+                "single-class"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"loginType\": \"credentials\",\n  \"loginData\": {\n    \"link\": \"https://homeaccess.example.org\",\n    \"username\": \"{{username}}\",\n    \"password\": \"{{password}}\"\n  },\n  \"options\": {\n    \"class\": \"AP Calculus BC\",\n    \"term\": \"\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Schedule",
+          "request": {
+            "method": "POST",
+            "description": "The student’s class schedule. On HAC and Skyward each row is keyed by the portal’s own column headers, so keys can vary between districts.",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/hac/schedule",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "hac",
+                "schedule"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"loginType\": \"credentials\",\n  \"loginData\": {\n    \"link\": \"https://homeaccess.example.org\",\n    \"username\": \"{{username}}\",\n    \"password\": \"{{password}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Attendance",
+          "request": {
+            "method": "POST",
+            "description": "Attendance events keyed by `MM/DD/YYYY`. HAC walks its calendar to `options.date`; PowerSchool and Skyward return the most recent month with data.",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/hac/attendance",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "hac",
+                "attendance"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"loginType\": \"credentials\",\n  \"loginData\": {\n    \"link\": \"https://homeaccess.example.org\",\n    \"username\": \"{{username}}\",\n    \"password\": \"{{password}}\"\n  },\n  \"options\": {\n    \"date\": \"March-2026\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Teachers",
+          "request": {
+            "method": "POST",
+            "description": "One entry per class with the teacher’s name and email.",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/hac/teachers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "hac",
+                "teachers"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"loginType\": \"credentials\",\n  \"loginData\": {\n    \"link\": \"https://homeaccess.example.org\",\n    \"username\": \"{{username}}\",\n    \"password\": \"{{password}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Report cards",
+          "request": {
+            "method": "POST",
+            "description": "All published report cards, newest first. Row shapes follow each portal’s report card layout.",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/hac/reportCard",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "hac",
+                "reportCard"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"loginType\": \"credentials\",\n  \"loginData\": {\n    \"link\": \"https://homeaccess.example.org\",\n    \"username\": \"{{username}}\",\n    \"password\": \"{{password}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Progress reports",
+          "request": {
+            "method": "POST",
+            "description": "Every interim progress report with per-course grades and teacher comment codes.",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/hac/ipr",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "hac",
+                "ipr"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"loginType\": \"credentials\",\n  \"loginData\": {\n    \"link\": \"https://homeaccess.example.org\",\n    \"username\": \"{{username}}\",\n    \"password\": \"{{password}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Transcript",
+          "request": {
+            "method": "POST",
+            "description": "Completed coursework by year/semester. The exact structure mirrors the portal’s transcript page.",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/hac/transcript",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "hac",
+                "transcript"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"loginType\": \"credentials\",\n  \"loginData\": {\n    \"link\": \"https://homeaccess.example.org\",\n    \"username\": \"{{username}}\",\n    \"password\": \"{{password}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "PowerSchool",
+      "description": "Guardian portal with multi-student parent accounts, date-driven term columns and Microsoft (Azure AD) sign-in via cookie handoff.",
+      "item": [
+        {
+          "name": "Auth methods",
+          "request": {
+            "method": "POST",
+            "description": "Given a PowerSchool portal link, reports whether it accepts username/password, Microsoft SSO, or both — so you only render the buttons that will work.",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/powerschool/authMethods",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "powerschool",
+                "authMethods"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"link\": \"https://ps.example.k12.us\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Log in",
+          "request": {
+            "method": "POST",
+            "description": "Authenticates only — no data is fetched. A cheap validation probe runs so a bad password or expired session fails here rather than on your next call. Store the returned `session` and send it with every data request.\n\nFor ClassLink logins that hit a second factor, this returns `mfaRequired` (HTTP 200, `success: false`) — re-call with the returned `session` and `loginData.clMFA`.",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/powerschool/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "powerschool",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"loginType\": \"credentials\",\n  \"loginData\": {\n    \"link\": \"https://ps.example.k12.us\",\n    \"username\": \"{{username}}\",\n    \"password\": \"{{password}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Student info",
+          "request": {
+            "method": "POST",
+            "description": "Name, school, grade and other registration details. Fields a portal does not expose are returned as empty strings.",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/powerschool/info",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "powerschool",
+                "info"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"loginType\": \"credentials\",\n  \"loginData\": {\n    \"link\": \"https://ps.example.k12.us\",\n    \"username\": \"{{username}}\",\n    \"password\": \"{{password}}\"\n  },\n  \"options\": {\n    \"studentId\": \"4821\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Classes & grades",
+          "request": {
+            "method": "POST",
+            "description": "Returns all classes for a term plus the term metadata needed to render a term picker. Pass `options.term` to switch terms; omit it for the current term.\n\n`scoresIncluded` tells you whether each class already carries its assignments (HAC) or whether you need `/single-class` (PowerSchool, Skyward).",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/powerschool/classes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "powerschool",
+                "classes"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"loginType\": \"credentials\",\n  \"loginData\": {\n    \"link\": \"https://ps.example.k12.us\",\n    \"username\": \"{{username}}\",\n    \"password\": \"{{password}}\"\n  },\n  \"options\": {\n    \"term\": \"\",\n    \"studentId\": \"4821\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Single class",
+          "request": {
+            "method": "POST",
+            "description": "Fetches one class and its assignment scores for a term. Identify the class with `options.class` (name) or, on PowerSchool and Skyward, `options.course` (id — more reliable when two sections share a name).",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/powerschool/single-class",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "powerschool",
+                "single-class"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"loginType\": \"credentials\",\n  \"loginData\": {\n    \"link\": \"https://ps.example.k12.us\",\n    \"username\": \"{{username}}\",\n    \"password\": \"{{password}}\"\n  },\n  \"options\": {\n    \"class\": \"AP Calculus BC\",\n    \"course\": \"\",\n    \"term\": \"\",\n    \"studentId\": \"4821\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Schedule",
+          "request": {
+            "method": "POST",
+            "description": "The student’s class schedule. On HAC and Skyward each row is keyed by the portal’s own column headers, so keys can vary between districts.",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/powerschool/schedule",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "powerschool",
+                "schedule"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"loginType\": \"credentials\",\n  \"loginData\": {\n    \"link\": \"https://ps.example.k12.us\",\n    \"username\": \"{{username}}\",\n    \"password\": \"{{password}}\"\n  },\n  \"options\": {\n    \"studentId\": \"4821\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Bell schedule",
+          "request": {
+            "method": "POST",
+            "description": "Period timings. PowerSchool groups periods by weekday; Skyward returns one flat list. Returns 404 when the portal has no timed schedule.",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/powerschool/bellSchedule",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "powerschool",
+                "bellSchedule"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"loginType\": \"credentials\",\n  \"loginData\": {\n    \"link\": \"https://ps.example.k12.us\",\n    \"username\": \"{{username}}\",\n    \"password\": \"{{password}}\"\n  },\n  \"options\": {\n    \"studentId\": \"4821\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Attendance",
+          "request": {
+            "method": "POST",
+            "description": "Attendance events keyed by `MM/DD/YYYY`. HAC walks its calendar to `options.date`; PowerSchool and Skyward return the most recent month with data.",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/powerschool/attendance",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "powerschool",
+                "attendance"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"loginType\": \"credentials\",\n  \"loginData\": {\n    \"link\": \"https://ps.example.k12.us\",\n    \"username\": \"{{username}}\",\n    \"password\": \"{{password}}\"\n  },\n  \"options\": {\n    \"studentId\": \"4821\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Teachers",
+          "request": {
+            "method": "POST",
+            "description": "One entry per class with the teacher’s name and email.",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/powerschool/teachers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "powerschool",
+                "teachers"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"loginType\": \"credentials\",\n  \"loginData\": {\n    \"link\": \"https://ps.example.k12.us\",\n    \"username\": \"{{username}}\",\n    \"password\": \"{{password}}\"\n  },\n  \"options\": {\n    \"studentId\": \"4821\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Report cards",
+          "request": {
+            "method": "POST",
+            "description": "All published report cards, newest first. Row shapes follow each portal’s report card layout.",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/powerschool/reportCard",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "powerschool",
+                "reportCard"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"loginType\": \"credentials\",\n  \"loginData\": {\n    \"link\": \"https://ps.example.k12.us\",\n    \"username\": \"{{username}}\",\n    \"password\": \"{{password}}\"\n  },\n  \"options\": {\n    \"studentId\": \"4821\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Skyward Legacy",
+      "description": "Classic Skyward Student & Family Access. Credentials only; term/subterm tabs are reconstructed from the gradebook itself.",
+      "item": [
+        {
+          "name": "Log in",
+          "request": {
+            "method": "POST",
+            "description": "Authenticates only — no data is fetched. A cheap validation probe runs so a bad password or expired session fails here rather than on your next call. Store the returned `session` and send it with every data request.\n\nFor ClassLink logins that hit a second factor, this returns `mfaRequired` (HTTP 200, `success: false`) — re-call with the returned `session` and `loginData.clMFA`.",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/skyward-legacy/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "skyward-legacy",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"loginType\": \"credentials\",\n  \"loginData\": {\n    \"link\": \"https://skyward.example.org/scripts/wsisa.dll/WService=wsEAplus/\",\n    \"username\": \"{{username}}\",\n    \"password\": \"{{password}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Student info",
+          "request": {
+            "method": "POST",
+            "description": "Name, school, grade and other registration details. Fields a portal does not expose are returned as empty strings.",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/skyward-legacy/info",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "skyward-legacy",
+                "info"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"loginType\": \"credentials\",\n  \"loginData\": {\n    \"link\": \"https://skyward.example.org/scripts/wsisa.dll/WService=wsEAplus/\",\n    \"username\": \"{{username}}\",\n    \"password\": \"{{password}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Classes & grades",
+          "request": {
+            "method": "POST",
+            "description": "Returns all classes for a term plus the term metadata needed to render a term picker. Pass `options.term` to switch terms; omit it for the current term.\n\n`scoresIncluded` tells you whether each class already carries its assignments (HAC) or whether you need `/single-class` (PowerSchool, Skyward).",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/skyward-legacy/classes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "skyward-legacy",
+                "classes"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"loginType\": \"credentials\",\n  \"loginData\": {\n    \"link\": \"https://skyward.example.org/scripts/wsisa.dll/WService=wsEAplus/\",\n    \"username\": \"{{username}}\",\n    \"password\": \"{{password}}\"\n  },\n  \"options\": {\n    \"term\": \"\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Single class",
+          "request": {
+            "method": "POST",
+            "description": "Fetches one class and its assignment scores for a term. Identify the class with `options.class` (name) or, on PowerSchool and Skyward, `options.course` (id — more reliable when two sections share a name).",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/skyward-legacy/single-class",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "skyward-legacy",
+                "single-class"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"loginType\": \"credentials\",\n  \"loginData\": {\n    \"link\": \"https://skyward.example.org/scripts/wsisa.dll/WService=wsEAplus/\",\n    \"username\": \"{{username}}\",\n    \"password\": \"{{password}}\"\n  },\n  \"options\": {\n    \"class\": \"AP Calculus BC\",\n    \"course\": \"\",\n    \"term\": \"\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Schedule",
+          "request": {
+            "method": "POST",
+            "description": "The student’s class schedule. On HAC and Skyward each row is keyed by the portal’s own column headers, so keys can vary between districts.",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/skyward-legacy/schedule",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "skyward-legacy",
+                "schedule"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"loginType\": \"credentials\",\n  \"loginData\": {\n    \"link\": \"https://skyward.example.org/scripts/wsisa.dll/WService=wsEAplus/\",\n    \"username\": \"{{username}}\",\n    \"password\": \"{{password}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Bell schedule",
+          "request": {
+            "method": "POST",
+            "description": "Period timings. PowerSchool groups periods by weekday; Skyward returns one flat list. Returns 404 when the portal has no timed schedule.",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/skyward-legacy/bellSchedule",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "skyward-legacy",
+                "bellSchedule"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"loginType\": \"credentials\",\n  \"loginData\": {\n    \"link\": \"https://skyward.example.org/scripts/wsisa.dll/WService=wsEAplus/\",\n    \"username\": \"{{username}}\",\n    \"password\": \"{{password}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Attendance",
+          "request": {
+            "method": "POST",
+            "description": "Attendance events keyed by `MM/DD/YYYY`. HAC walks its calendar to `options.date`; PowerSchool and Skyward return the most recent month with data.",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/skyward-legacy/attendance",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "skyward-legacy",
+                "attendance"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"loginType\": \"credentials\",\n  \"loginData\": {\n    \"link\": \"https://skyward.example.org/scripts/wsisa.dll/WService=wsEAplus/\",\n    \"username\": \"{{username}}\",\n    \"password\": \"{{password}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Teachers",
+          "request": {
+            "method": "POST",
+            "description": "One entry per class with the teacher’s name and email.",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/skyward-legacy/teachers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "skyward-legacy",
+                "teachers"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"loginType\": \"credentials\",\n  \"loginData\": {\n    \"link\": \"https://skyward.example.org/scripts/wsisa.dll/WService=wsEAplus/\",\n    \"username\": \"{{username}}\",\n    \"password\": \"{{password}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Report cards",
+          "request": {
+            "method": "POST",
+            "description": "All published report cards, newest first. Row shapes follow each portal’s report card layout.",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/skyward-legacy/reportCard",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "skyward-legacy",
+                "reportCard"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"loginType\": \"credentials\",\n  \"loginData\": {\n    \"link\": \"https://skyward.example.org/scripts/wsisa.dll/WService=wsEAplus/\",\n    \"username\": \"{{username}}\",\n    \"password\": \"{{password}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Transcript",
+          "request": {
+            "method": "POST",
+            "description": "Completed coursework by year/semester. The exact structure mirrors the portal’s transcript page.",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/skyward-legacy/transcript",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "skyward-legacy",
+                "transcript"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"loginType\": \"credentials\",\n  \"loginData\": {\n    \"link\": \"https://skyward.example.org/scripts/wsisa.dll/WService=wsEAplus/\",\n    \"username\": \"{{username}}\",\n    \"password\": \"{{password}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
