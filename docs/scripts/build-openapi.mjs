@@ -727,7 +727,7 @@ const spec = {
       'Gradiate logs into school district portals on a student’s behalf and returns clean JSON. Every platform shares the same route table, request shape, session envelope, streaming protocol and error format.',
     license: { name: 'See LICENSE' },
   },
-  servers: [{ url: '/', description: 'This server' }],
+  servers: [{ url: 'https://api.gradiate.app', description: 'Production' }],
   tags: PLATFORMS.map((p) => ({ name: p.name, description: p.summary })),
   paths,
   components: { schemas },

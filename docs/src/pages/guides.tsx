@@ -133,7 +133,7 @@ function Quickstart() {
       <CodeBlock
         lang="bash"
         title="Terminal"
-        code={`curl -X POST https://your-api-host/hac/login \\
+        code={`curl -X POST https://api.gradiate.app/hac/login \\
   -H 'Content-Type: application/json' \\
   -d '{
     "loginType": "credentials",
@@ -168,7 +168,7 @@ function Quickstart() {
         title="Python"
         code={`import requests
 
-API = "https://your-api-host/hac"
+API = "https://api.gradiate.app/hac"
 auth = {
     "loginType": "credentials",
     "loginData": {"link": "https://homeaccess.example.org", "username": "s123456", "password": "••••••••"},
@@ -587,7 +587,7 @@ function Tools() {
       <P>
         Every endpoint page also has a <strong>TypeScript</strong> tab on its response example. To generate types for the whole API:
       </P>
-      <CodeBlock lang="bash" title="Terminal" code={`npx openapi-typescript https://your-api-host/openapi.json -o gradiate.d.ts`} />
+      <CodeBlock lang="bash" title="Terminal" code={`npx openapi-typescript https://api.gradiate.app/openapi.json -o gradiate.d.ts`} />
       <CodeBlock
         lang="typescript"
         title="client.ts"
@@ -598,7 +598,7 @@ type ClassesBody = paths["/hac/classes"]["post"]["requestBody"]["content"]["appl
 type ClassesResponse = paths["/hac/classes"]["post"]["responses"]["200"]["content"]["application/json"]
 
 export async function getClasses(body: ClassesBody): Promise<ClassesResponse> {
-  const res = await fetch("https://your-api-host/hac/classes", {
+  const res = await fetch("https://api.gradiate.app/hac/classes", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),

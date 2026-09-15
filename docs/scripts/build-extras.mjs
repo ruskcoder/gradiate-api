@@ -61,7 +61,7 @@ const collection = {
     schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json',
   },
   variable: [
-    { key: 'baseUrl', value: 'http://localhost:3000' },
+    { key: 'baseUrl', value: 'https://api.gradiate.app' },
     { key: 'username', value: '' },
     { key: 'password', value: '' },
   ],

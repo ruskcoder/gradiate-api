@@ -11,8 +11,8 @@
   },
   "servers": [
     {
-      "url": "/",
-      "description": "This server"
+      "url": "https://api.gradiate.app",
+      "description": "Production"
     }
   ],
   "tags": [
