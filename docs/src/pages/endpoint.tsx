@@ -3,6 +3,7 @@ import { Link, Navigate, useParams } from "react-router-dom"
 import { CheckIcon, MinusIcon, PlayIcon } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { CodeBlock, CopyButton } from "@/components/code-block"
 import { Callout, H2, H3, PrevNext } from "@/components/docs"
@@ -183,10 +184,27 @@ export function EndpointPage() {
             </div>
 
             <H3 id="login-data">loginData</H3>
-            <p className="mb-3 text-sm text-muted-foreground">
-              Fields depend on <code className="inline-code">loginType</code>. Showing{" "}
-              <code className="inline-code">{loginType}</code> ({LOGIN_TYPE_LABEL[loginType]}) — change it in the playground.
-            </p>
+            <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-sm text-muted-foreground">
+                Fields depend on <code className="inline-code">loginType</code>.
+              </p>
+              <Select
+                value={loginType}
+                onValueChange={(v) => set({ loginType: { ...state.loginType, [platformId]: String(v) } })}
+              >
+                <SelectTrigger className="w-full font-mono text-base sm:w-64 sm:text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {requestSchema.properties.loginType.enum.map((t: string) => (
+                    <SelectItem key={t} value={t} className="font-mono text-xs">
+                      {t}
+                      <span className="ml-auto font-sans text-muted-foreground">{LOGIN_TYPE_LABEL[t]}</span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <div className="rounded-lg border px-4">
               <SchemaFields schema={loginDataSchema(loginType)} omit={platformId === "hac" ? [] : ["district"]} />
             </div>

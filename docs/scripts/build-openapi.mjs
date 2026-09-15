@@ -1,5 +1,5 @@
 /**
- * Generates the Gradexis OpenAPI 3.1 spec.
+ * Generates the Gradiate OpenAPI 3.1 spec.
  *
  * The API mounts the same core route table under every platform prefix, so the
  * spec is built from two tables — PLATFORMS and OPERATIONS — rather than
@@ -720,11 +720,11 @@ const allOperations = [
 const spec = {
   openapi: '3.1.0',
   info: {
-    title: 'Gradexis API',
+    title: 'Gradiate API',
     version: '1.0.0',
     summary: 'One API for student grades across Home Access Center, PowerSchool and Skyward.',
     description:
-      'Gradexis logs into school district portals on a student’s behalf and returns clean JSON. Every platform shares the same route table, request shape, session envelope, streaming protocol and error format.',
+      'Gradiate logs into school district portals on a student’s behalf and returns clean JSON. Every platform shares the same route table, request shape, session envelope, streaming protocol and error format.',
     license: { name: 'See LICENSE' },
   },
   servers: [{ url: '/', description: 'This server' }],

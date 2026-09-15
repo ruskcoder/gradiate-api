@@ -14,7 +14,7 @@ export interface HistoryEntry {
   body: Record<string, unknown>
 }
 
-const KEY = "gradexis-docs-history"
+const KEY = "gradiate-docs-history"
 const MAX = 20
 const SECRETS = ["password", "clMFA", "cookies", "clsession"]
 

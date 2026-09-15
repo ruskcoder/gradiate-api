@@ -1,10 +1,10 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "Gradexis API",
+    "title": "Gradiate API",
     "version": "1.0.0",
     "summary": "One API for student grades across Home Access Center, PowerSchool and Skyward.",
-    "description": "Gradexis logs into school district portals on a student’s behalf and returns clean JSON. Every platform shares the same route table, request shape, session envelope, streaming protocol and error format.",
+    "description": "Gradiate logs into school district portals on a student’s behalf and returns clean JSON. Every platform shares the same route table, request shape, session envelope, streaming protocol and error format.",
     "license": {
       "name": "See LICENSE"
     }

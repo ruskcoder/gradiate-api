@@ -25,9 +25,9 @@ export function OverviewPage() {
   return (
     <DocsPage>
       <PageHeader
-        eyebrow="Gradexis API"
+        eyebrow="Gradiate API"
         title="One API for every student portal"
-        description="Gradexis logs into school district portals on a student’s behalf and returns clean, consistent JSON — grades, assignments, schedules, attendance and reports."
+        description="Gradiate logs into school district portals on a student’s behalf and returns clean, consistent JSON — grades, assignments, schedules, attendance and reports."
       />
 
       <div className="grid gap-4 sm:grid-cols-3">
@@ -556,7 +556,7 @@ function Tools() {
     },
     {
       title: "Postman collection",
-      href: "/gradexis.postman_collection.json",
+      href: "/gradiate.postman_collection.json",
       body: "Every endpoint for every platform, with {{baseUrl}}, {{username}} and {{password}} variables.",
     },
     {
@@ -587,12 +587,12 @@ function Tools() {
       <P>
         Every endpoint page also has a <strong>TypeScript</strong> tab on its response example. To generate types for the whole API:
       </P>
-      <CodeBlock lang="bash" title="Terminal" code={`npx openapi-typescript https://your-api-host/openapi.json -o gradexis.d.ts`} />
+      <CodeBlock lang="bash" title="Terminal" code={`npx openapi-typescript https://your-api-host/openapi.json -o gradiate.d.ts`} />
       <CodeBlock
         lang="typescript"
         title="client.ts"
         className="mt-3"
-        code={`import type { paths } from "./gradexis"
+        code={`import type { paths } from "./gradiate"
 
 type ClassesBody = paths["/hac/classes"]["post"]["requestBody"]["content"]["application/json"]
 type ClassesResponse = paths["/hac/classes"]["post"]["responses"]["200"]["content"]["application/json"]

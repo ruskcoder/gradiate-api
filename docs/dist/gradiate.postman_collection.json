@@ -1,7 +1,7 @@
 {
   "info": {
-    "name": "Gradexis API",
-    "description": "Gradexis logs into school district portals on a student’s behalf and returns clean JSON. Every platform shares the same route table, request shape, session envelope, streaming protocol and error format.",
+    "name": "Gradiate API",
+    "description": "Gradiate logs into school district portals on a student’s behalf and returns clean JSON. Every platform shares the same route table, request shape, session envelope, streaming protocol and error format.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [

@@ -33,11 +33,9 @@ export function AppSidebar() {
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton size="lg" render={<Link to="/" />}>
-              <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-                <BookOpenIcon className="size-4" />
-              </div>
+              <img src="/logo.png" alt="" className="size-8 shrink-0 rounded-lg" />
               <div className="grid flex-1 text-left leading-tight">
-                <span className="truncate font-semibold">Gradexis API</span>
+                <span className="truncate font-semibold">Gradiate API</span>
                 <span className="truncate text-xs text-muted-foreground">Reference · v1</span>
               </div>
             </SidebarMenuButton>
@@ -60,9 +58,13 @@ export function AppSidebar() {
                             POST
                           </span>
                         )}
-                        <span>{item.title}</span>
+                        <span className="shrink-0">{item.title}</span>
+                        {item.badge && (
+                          <span title={item.badge} className="ml-auto min-w-0 truncate pl-1 text-right text-[10px] text-muted-foreground">
+                            {item.badge}
+                          </span>
+                        )}
                       </SidebarMenuButton>
-                      {item.badge && <SidebarMenuBadge className="text-[10px] font-normal text-muted-foreground">{item.badge}</SidebarMenuBadge>}
                     </SidebarMenuItem>
                   )
                 })}

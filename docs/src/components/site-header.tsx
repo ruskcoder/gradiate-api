@@ -13,7 +13,6 @@ import {
 } from "@/components/ui/command"
 import { Command } from "@/components/ui/command"
 import { Kbd } from "@/components/ui/kbd"
-import { Separator } from "@/components/ui/separator"
 import { SidebarTrigger } from "@/components/ui/sidebar"
 import { NAV } from "@/lib/nav"
 import { operations } from "@/lib/spec"
@@ -138,9 +137,8 @@ export function SiteHeader() {
   const item = group?.items.find((i) => i.href === pathname)
 
   return (
-    <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-2 border-b bg-background/80 px-3 sm:px-4 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+    <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-3 border-b bg-background/80 px-3 sm:px-4 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <SidebarTrigger className="-ml-1" />
-      <Separator orientation="vertical" className="mr-1 data-[orientation=vertical]:h-4" />
       <div className="hidden min-w-0 items-center gap-1.5 text-sm md:flex">
         <span className="text-muted-foreground">{group?.title ?? "Docs"}</span>
         {item && (

@@ -10,7 +10,7 @@ import { getPlatform, platforms } from "@/lib/spec"
  */
 
 const SECRET_FIELDS = new Set(["password", "clMFA", "cookies"])
-const STORAGE_KEY = "gradexis-docs-playground"
+const STORAGE_KEY = "gradiate-docs-playground"
 
 export interface PlaygroundState {
   platform: string

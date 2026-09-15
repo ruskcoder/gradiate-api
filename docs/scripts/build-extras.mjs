@@ -1,7 +1,7 @@
 /**
  * Derived artifacts built from the generated OpenAPI spec:
  *   public/llms.txt                       plain-text API summary for LLM tools
- *   public/gradexis.postman_collection.json   Postman v2.1 collection
+ *   public/gradiate.postman_collection.json   Postman v2.1 collection
  * Run after build-openapi.mjs.
  */
 
@@ -91,5 +91,5 @@ const collection = {
 };
 
 fs.writeFileSync(path.join(root, 'public/llms.txt'), llms);
-fs.writeFileSync(path.join(root, 'public/gradexis.postman_collection.json'), JSON.stringify(collection, null, 2) + '\n');
+fs.writeFileSync(path.join(root, 'public/gradiate.postman_collection.json'), JSON.stringify(collection, null, 2) + '\n');
 console.log('llms.txt + postman collection written');
