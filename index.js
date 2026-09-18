@@ -151,6 +151,40 @@ app.get('/web-notifications', async (req, res) => {
   }
 });
 
+// Public aggregate for the splash page: total users and users per school, never
+// individual rows. Cached in memory and at the edge so a busy splash page costs
+// at most one tiny database read per STATS_TTL_MS per instance.
+const STATS_TTL_MS = 30 * 1000;
+let statsCache = { at: 0, body: null, pending: null };
+
+async function loadStats() {
+  const { data, error } = await supabase.from('school_counts').select('school,count');
+  if (error) throw error;
+  const schools = data
+    .filter((row) => row.count > 0)
+    .sort((a, b) => b.count - a.count)
+    .map((row) => [row.school, row.count]);
+  const total = schools.reduce((sum, [, count]) => sum + count, 0);
+  return { total, schools };
+}
+
+app.get('/stats', async (req, res) => {
+  try {
+    if (!statsCache.body || Date.now() - statsCache.at > STATS_TTL_MS) {
+      // Collapse concurrent refreshes into one query.
+      statsCache.pending ??= loadStats().finally(() => { statsCache.pending = null; });
+      statsCache.body = await statsCache.pending;
+      statsCache.at = Date.now();
+    }
+    res.set('Cache-Control', 'public, max-age=30, stale-while-revalidate=60');
+    // Express adds an ETag, so an unchanged poll gets a bodiless 304.
+    res.json(statsCache.body);
+  } catch (error) {
+    console.error('stats fetch failed:', error);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
 app.post('/subscribe', strictLimiter, async (req, res) => {
   try {
     const { payload, platform = 'web' } = req.body;
