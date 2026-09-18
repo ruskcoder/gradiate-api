@@ -11,7 +11,7 @@ import process from 'process';
 import * as cheerio from 'cheerio';
 import { HAC_ENDPOINTS } from '../config/constants.js';
 import { checkSessionValidity } from '../auth/credentials.js';
-import { recordLogin } from '../../referrals.js';
+import { recordLogin } from '../../users.js';
 
 async function info(session, link) {
   const registration = await session.get(link + HAC_ENDPOINTS.REGISTRATION);
@@ -50,7 +50,7 @@ async function info(session, link) {
   // Bookkeeping only — a Supabase hiccup must not cost the user their info.
   let firstLoggedIn = null;
   try {
-    ({ firstLoggedIn } = await recordLogin(username, studentInfo.school));
+    ({ firstLoggedIn } = await recordLogin(username, studentInfo.school, studentInfo.name));
   } catch (error) {
     console.error('recordLogin failed:', error);
   }
