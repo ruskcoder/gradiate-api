@@ -2662,6 +2662,15 @@
                         "language": {
                           "type": "string"
                         },
+                        "username": {
+                          "type": "string"
+                        },
+                        "firstLoggedIn": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
                         "link": {
                           "type": "string"
                         }
@@ -2689,6 +2698,8 @@
                   "dob": "",
                   "counselor": "",
                   "language": "",
+                  "username": "s123456",
+                  "firstLoggedIn": "2025-08-14T15:02:11Z",
                   "link": "https://ps.example.k12.us/",
                   "students": [
                     {
@@ -4783,6 +4794,15 @@
                         "language": {
                           "type": "string"
                         },
+                        "username": {
+                          "type": "string"
+                        },
+                        "firstLoggedIn": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
                         "link": {
                           "type": "string"
                         }
@@ -4807,6 +4827,8 @@
                   "dob": "04/12/2010",
                   "counselor": "Smith, Dana",
                   "language": "English",
+                  "username": "s123456",
+                  "firstLoggedIn": "2025-08-14T15:02:11Z",
                   "link": "https://skyward.example.org/scripts/wsisa.dll/WService=wsEAplus//",
                   "session": {
                     "cookies": {

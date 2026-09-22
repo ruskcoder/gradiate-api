@@ -18,6 +18,7 @@ import ProgressTracker from './progressTracker.js';
 import { createSession, createSuccessResponse } from './session.js';
 import { authenticate } from './auth/index.js';
 import { applyGradeOverrides } from './testOverrides.js';
+import { recordLogin } from '../users.js';
 import { HTTP_STATUS, AuthenticationError } from './errors.js';
 
 // The routes whose payloads carry class averages, and so can be faked for the
@@ -37,6 +38,24 @@ const ROUTE_TABLE = [
   { path: '/ipr', key: 'ipr', stage: 'Fetching progress reports' },
   { path: '/transcript', key: 'transcript', stage: 'Fetching transcript' },
 ];
+
+/**
+ * Record the login in `users` and stamp `username` + `firstLoggedIn` onto the
+ * info payload. Bookkeeping only — a Supabase hiccup must not cost the user
+ * their info, and an unresolved username is never written.
+ */
+async function withLoginRecord(data, username) {
+  let firstLoggedIn = null;
+  const key = (username || '').toLowerCase();
+  if (key && key !== 'unknown') {
+    try {
+      ({ firstLoggedIn } = await recordLogin(key, data?.school, data?.name));
+    } catch (error) {
+      console.error('recordLogin failed:', error);
+    }
+  }
+  return { username, firstLoggedIn, ...data };
+}
 
 function isStreaming(req) {
   return req.body?.stream === true || req.body?.stream === 'true';
@@ -142,9 +161,12 @@ function createPlatformRoutes(platform) {
 
         // Test-account grade faking, applied here rather than inside each
         // platform so every portal gets it for free. A no-op for real users.
-        const shaped = GRADE_ROUTE_KEYS.has(key)
+        let shaped = GRADE_ROUTE_KEYS.has(key)
           ? await applyGradeOverrides(data, auth.username)
           : data;
+
+        // User bookkeeping, likewise done here so every platform records logins.
+        if (key === 'info') shaped = await withLoginRecord(shaped, auth.username);
 
         const base = auth.session.baseSession || auth.session;
         progressTracker.complete(createSuccessResponse(shaped, base));

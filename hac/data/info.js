@@ -1,17 +1,13 @@
 /**
  * Student info — scrapes the Registration page for profile fields, pulls the
- * district name from the login splash banner, and records the user's login.
- *
- * The user bookkeeping (recordLogin) and district extraction used to live in the
- * HAC route; under the registry model that business logic belongs to the data
- * function, not core.
+ * district name from the login splash banner. Login bookkeeping (the `users`
+ * table) is done by core's /info route for every platform.
  */
 
 import process from 'process';
 import * as cheerio from 'cheerio';
 import { HAC_ENDPOINTS } from '../config/constants.js';
 import { checkSessionValidity } from '../auth/credentials.js';
-import { recordLogin } from '../../users.js';
 
 async function info(session, link) {
   const registration = await session.get(link + HAC_ENDPOINTS.REGISTRATION);
@@ -46,19 +42,9 @@ async function info(session, link) {
     }
   }
 
-  const username = (session.username || '').toLowerCase();
-  // Bookkeeping only — a Supabase hiccup must not cost the user their info.
-  let firstLoggedIn = null;
-  try {
-    ({ firstLoggedIn } = await recordLogin(username, studentInfo.school, studentInfo.name));
-  } catch (error) {
-    console.error('recordLogin failed:', error);
-  }
-
   return {
     username: session.username,
     link,
-    firstLoggedIn,
     ...studentInfo,
   };
 }

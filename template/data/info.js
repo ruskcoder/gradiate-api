@@ -4,6 +4,9 @@
  * Core wraps it into { success:true, ...data, session } — never build that here.
  *
  * `session.username` holds the resolved username if you need it.
+ *
+ * info: return `school` and `name` — core's /info route uses them to record the
+ * login in the `users` table (and adds `username` + `firstLoggedIn`).
  */
 
 import { ENDPOINTS } from '../config/constants.js';
