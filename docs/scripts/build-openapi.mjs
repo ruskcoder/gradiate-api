@@ -83,6 +83,27 @@ const PLATFORMS = [
       'No SSO login types and no `/ipr`.',
     ],
   },
+  {
+    id: 'canvas',
+    name: 'Canvas',
+    fullName: 'Canvas LMS (Instructure)',
+    mount: '/canvas',
+    loginTypes: ['token'],
+    exampleLink: 'https://district.instructure.com',
+    helpers: [],
+    operations: ['info', 'classes', 'singleClass', 'teachers', 'assignments'],
+    summary:
+      'Instructure Canvas, via its documented REST API and a user access token. The only LMS here — no attendance, report cards or transcripts, but assignments are first-class objects with real due dates.',
+    notes: [
+      'Sign in with `loginType: "token"`. The user generates the token in Canvas under **Account → Settings → + New Access Token**; there is no password and no SSO flow to complete.',
+      '`link` is the Canvas instance URL (`https://district.instructure.com`). Any path is discarded, so pasting the URL of whatever page the user was on works.',
+      'Terms are Canvas **grading periods** — flat and dated, so `termTree` has no nesting (`hasSubterms: false`). A synthetic `Total` column carries the whole-course grade when the account enables all-grading-period totals, or when there are no grading periods at all.',
+      '`/classes` returns averages only (`scoresIncluded: false`); fetch assignments per class with `/single-class`, or across every class at once with `/assignments`.',
+      '`/assignments` is Canvas-only: every assignment with due / unlock / lock timestamps, submission state, score and class statistics, filterable by term, course, status and due-date window.',
+      'No `/attendance`, `/reportCard`, `/transcript`, `/ipr`, `/schedule` or `/bellSchedule` — Canvas is a learning platform, not a student information system, so those routes return 404.',
+      'Teacher emails are not exposed by Canvas’s course payload, so `/teachers` returns `email: ""`.',
+    ],
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -94,7 +115,7 @@ const ref = (name) => ({ $ref: `#/components/schemas/${name}` });
 const schemas = {
   LoginType: {
     type: 'string',
-    enum: ['credentials', 'classlink', 'classlinkCredentials', 'microsoftSession'],
+    enum: ['credentials', 'classlink', 'classlinkCredentials', 'microsoftSession', 'token'],
     description: 'How to authenticate. Each platform accepts a subset — see the platform pages.',
   },
   CredentialsLoginData: {
@@ -140,6 +161,26 @@ const schemas = {
       username: { type: 'string', description: 'Optional display username.' },
     },
   },
+  TokenLoginData: {
+    type: 'object',
+    title: 'token',
+    required: ['link', 'token'],
+    description:
+      'API-token sign-in. The token is the whole credential — there is no handshake and no cookie — so it is sent on every request and round-trips inside the `session` envelope.',
+    properties: {
+      link: {
+        type: 'string',
+        format: 'uri',
+        description: 'Canvas instance URL, e.g. `https://district.instructure.com`. Any path is stripped.',
+      },
+      token: {
+        type: 'string',
+        format: 'password',
+        description: 'A Canvas user access token (Account → Settings → **+ New Access Token**).',
+      },
+      username: { type: 'string', description: 'Optional display username.' },
+    },
+  },
   Session: {
     type: 'object',
     description:
@@ -169,7 +210,7 @@ const schemas = {
       loginType: ref('LoginType'),
       loginData: {
         description: 'Credentials for `loginType`. May be omitted when a fresh `session` is supplied (except for SSO logins, which also need it to re-login).',
-        oneOf: [ref('CredentialsLoginData'), ref('ClassLinkLoginData'), ref('ClassLinkCredentialsLoginData'), ref('MicrosoftSessionLoginData')],
+        oneOf: [ref('CredentialsLoginData'), ref('ClassLinkLoginData'), ref('ClassLinkCredentialsLoginData'), ref('MicrosoftSessionLoginData'), ref('TokenLoginData')],
       },
       session: ref('Session'),
       stream: { type: 'boolean', default: false, description: 'Stream progress updates before the final JSON body. See the Streaming guide.' },
@@ -236,6 +277,10 @@ const schemas = {
       averages: { type: 'object', additionalProperties: { type: 'string' }, description: '**PowerSchool / Skyward.** Average per term label.' },
       scores: { type: 'array', items: ref('Score'), description: '**HAC** on `/classes`; all platforms on `/single-class`.' },
       categories: { type: 'object', additionalProperties: true },
+      averageType: { type: 'string', description: 'How the portal computes the average: `percentwise`, `scorewise` or `categorywise`.' },
+      code: { type: 'string', description: '**Canvas.** The course code (`MTH401`).' },
+      termName: { type: 'string', description: '**Canvas.** The enrollment term the course belongs to (`Fall 2026`).' },
+      url: { type: 'string', description: '**Canvas.** Link to the course.' },
     },
   },
   TermFields: {
@@ -245,8 +290,8 @@ const schemas = {
       termList: { type: 'array', items: { type: 'string' }, description: 'Every available term, in portal order.' },
       termsIncluded: { type: 'boolean' },
       hasSubterms: { type: 'boolean' },
-      termTree: { type: 'array', items: ref('TermNode'), description: '**PowerSchool / Skyward.** Terms grouped by letter family.' },
-      currentTerms: { type: 'array', items: { type: 'string' }, description: '**PowerSchool / Skyward.** All terms active today, coarsest first — the last entry is the finest.' },
+      termTree: { type: 'array', items: ref('TermNode'), description: '**PowerSchool / Skyward.** Terms grouped by letter family. **Canvas** returns a flat list (grading periods do not nest).' },
+      currentTerms: { type: 'array', items: { type: 'string' }, description: '**PowerSchool / Skyward / Canvas.** All terms active today, coarsest first — the last entry is the finest.' },
     },
   },
   StudentContext: {
@@ -255,6 +300,53 @@ const schemas = {
     properties: {
       students: { type: 'array', items: ref('Student') },
       studentId: { type: 'string' },
+    },
+  },
+  Assignment: {
+    type: 'object',
+    description: '**Canvas only.** One assignment from `/assignments`.',
+    properties: {
+      id: { type: 'string' },
+      course: { type: 'string', description: 'Course id — matches `classes[].course`.' },
+      courseName: { type: 'string' },
+      courseCode: { type: 'string' },
+      name: { type: 'string' },
+      category: { type: 'string', description: 'Canvas assignment group (the grade category).' },
+      url: { type: 'string', description: 'Link to the assignment in Canvas.' },
+      description: { type: 'string', description: 'Canvas’s HTML body. Only present with `options.includeDescription`.' },
+      dueAt: { type: ['string', 'null'], format: 'date-time', description: 'Raw ISO instant, for sorting and relative times.' },
+      dueDate: { type: 'string', description: '`M/D/YYYY` in the user’s own Canvas time zone.' },
+      dueTime: { type: 'string', example: '11:59 PM' },
+      unlockAt: { type: ['string', 'null'], format: 'date-time' },
+      unlockDate: { type: 'string' },
+      lockAt: { type: ['string', 'null'], format: 'date-time' },
+      lockDate: { type: 'string' },
+      daysUntilDue: { type: ['integer', 'null'], description: 'Negative once the due date has passed.' },
+      pointsPossible: { type: ['number', 'null'] },
+      gradingType: { type: 'string', enum: ['points', 'percent', 'letter_grade', 'gpa_scale', 'pass_fail', 'not_graded'] },
+      submissionTypes: { type: 'array', items: { type: 'string' } },
+      published: { type: 'boolean' },
+      omitFromFinalGrade: { type: 'boolean' },
+      status: {
+        type: 'string',
+        enum: ['graded', 'submitted', 'pending', 'late', 'missing', 'excused', 'overdue', 'upcoming', 'past', 'undated'],
+        description: 'Where the assignment stands, resolved in the order a student reads it: excused, then graded, then submitted, then the due date. Filter with `options.status`.',
+      },
+      submitted: { type: 'boolean' },
+      submittedAt: { type: ['string', 'null'], format: 'date-time' },
+      graded: { type: 'boolean' },
+      gradedAt: { type: ['string', 'null'], format: 'date-time' },
+      attempt: { type: ['integer', 'null'] },
+      score: { type: ['number', 'null'] },
+      grade: { type: ['string', 'null'], description: 'The score in the assignment’s own scheme (a letter, `complete`, or the number).' },
+      percentage: { type: ['string', 'null'] },
+      pointsDeducted: { type: ['number', 'null'], description: 'Taken off by the course’s late policy.' },
+      badges: { type: 'array', items: { type: 'string' }, description: 'e.g. `missing`, `late`, `exempt`.' },
+      statistics: {
+        type: ['object', 'null'],
+        description: 'Class-wide min/max/mean, when the teacher publishes them.',
+        properties: { min: { type: ['number', 'null'] }, max: { type: ['number', 'null'] }, mean: { type: ['number', 'null'] } },
+      },
     },
   },
   AttendanceEvent: {
@@ -278,6 +370,18 @@ const OPT = {
   course: { type: 'string', description: 'Course id from `classes[].course` (preferred over `class` when both exist).' },
   studentId: { type: 'string', description: 'Which student to fetch for on multi-student parent accounts (from `students[].id`).' },
   date: { type: 'string', example: 'March-2026', description: 'Month to show, formatted `Month-YYYY`.' },
+  status: {
+    description: 'Keep only assignments in these states. One value or a list; `late`, `missing` and `excused` also match the corresponding `badges`, so graded-but-late work still shows up.',
+    oneOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' } }],
+    example: 'upcoming',
+  },
+  dueAfter: { type: 'string', format: 'date-time', description: 'Keep only assignments due at or after this date.' },
+  dueBefore: { type: 'string', format: 'date-time', description: 'Keep only assignments due at or before this date.' },
+  ungraded: { type: 'boolean', description: 'Set `false` to drop assignments that do not count toward the grade.' },
+  includeDescription: { type: 'boolean', description: 'Include each assignment’s HTML body. Off by default — it is frequently very large.' },
+  limit: { type: 'integer', description: 'Cap how many assignments are returned, after sorting. `counts` still reflects the full match.' },
+  order: { type: 'string', enum: ['due', 'recent', 'course'], default: 'due', description: 'Sort order. Undated work always sorts last.' },
+  includeConcluded: { type: 'boolean', description: 'Read concluded enrollments instead of active ones.' },
 };
 
 function optionsFor(op, platform) {
@@ -290,7 +394,22 @@ function optionsFor(op, platform) {
     p.term = OPT.term;
     if (platform === 'hac') req.push('class');
   }
+  if (op === 'assignments') {
+    p.term = OPT.term;
+    p.course = OPT.course;
+    p.class = OPT.class;
+    p.status = OPT.status;
+    p.dueAfter = OPT.dueAfter;
+    p.dueBefore = OPT.dueBefore;
+    p.ungraded = OPT.ungraded;
+    p.includeDescription = OPT.includeDescription;
+    p.limit = OPT.limit;
+    p.order = OPT.order;
+  }
   if (op === 'attendance' && platform === 'hac') p.date = OPT.date;
+  if (platform === 'canvas' && ['classes', 'singleClass', 'teachers', 'assignments', 'info'].includes(op)) {
+    p.includeConcluded = OPT.includeConcluded;
+  }
   if (platform === 'powerschool') p.studentId = OPT.studentId;
   if (!Object.keys(p).length) return null;
   return { type: 'object', properties: p, ...(req.length ? { required: req } : {}) };
@@ -340,19 +459,46 @@ const OPERATIONS = [
         counselor: { type: 'string' },
         language: { type: 'string' },
         ...(p === 'hac' ? { cohortYear: { type: 'string' }, username: { type: 'string' }, firstLoggedIn: { type: ['string', 'null'] } } : {}),
+        ...(p === 'canvas'
+          ? {
+              userId: { type: 'string', description: 'Canvas user id.' },
+              username: { type: 'string', description: 'Canvas login id.' },
+              email: { type: 'string' },
+              avatar: { type: 'string' },
+              timeZone: { type: 'string', description: 'The user’s Canvas time zone — every date on this platform is rendered in it.' },
+              bio: { type: 'string' },
+              courseCount: { type: 'integer' },
+              enrollmentTerms: { type: 'array', items: { type: 'string' } },
+            }
+          : {}),
         link: { type: 'string' },
       }),
-    example: (p) => ({
-      name: 'Jordan Rivera',
-      grade: p === 'powerschool' ? '' : '10',
-      school: 'Cypress Ridge High School',
-      district: 'Example ISD',
-      dob: p === 'powerschool' ? '' : '04/12/2010',
-      counselor: p === 'powerschool' ? '' : 'Smith, Dana',
-      language: p === 'powerschool' ? '' : 'English',
-      ...(p === 'hac' ? { cohortYear: '2028', username: 's123456', firstLoggedIn: '2025-08-14T15:02:11Z' } : {}),
-      link: PLATFORMS.find((x) => x.id === p).exampleLink + '/',
-    }),
+    example: (p) => {
+      const blank = p === 'powerschool' || p === 'canvas';
+      return {
+        name: 'Jordan Rivera',
+        grade: blank ? '' : '10',
+        school: 'Cypress Ridge High School',
+        district: p === 'canvas' ? '' : 'Example ISD',
+        dob: blank ? '' : '04/12/2010',
+        counselor: blank ? '' : 'Smith, Dana',
+        language: p === 'canvas' ? 'en' : blank ? '' : 'English',
+        ...(p === 'hac' ? { cohortYear: '2028', username: 's123456', firstLoggedIn: '2025-08-14T15:02:11Z' } : {}),
+        ...(p === 'canvas'
+          ? {
+              userId: '4821',
+              username: 's123456',
+              email: 'jordan@example.k12.us',
+              avatar: 'https://district.instructure.com/images/thumbnails/1.png',
+              timeZone: 'America/Chicago',
+              bio: '',
+              courseCount: 7,
+              enrollmentTerms: ['Fall 2026'],
+            }
+          : {}),
+        link: PLATFORMS.find((x) => x.id === p).exampleLink + '/',
+      };
+    },
   },
   {
     key: 'classes',
@@ -373,7 +519,36 @@ const OPERATIONS = [
         ],
       }),
     example: (p) =>
-      p === 'hac'
+      p === 'canvas'
+        ? {
+            scoresIncluded: false,
+            termsIncluded: true,
+            hasSubterms: false,
+            termList: ['Quarter 1', 'Quarter 2', 'Total'],
+            termTree: [
+              { label: 'Quarter 1', children: [] },
+              { label: 'Quarter 2', children: [] },
+              { label: 'Total', children: [] },
+            ],
+            term: 'Quarter 2',
+            currentTerms: ['Total', 'Quarter 2'],
+            classes: [
+              {
+                course: '101',
+                name: 'AP Calculus BC',
+                code: 'MTH401',
+                period: '',
+                teacher: 'Nguyen, Alex',
+                email: '',
+                room: '',
+                termName: 'Fall 2026',
+                url: 'https://district.instructure.com/courses/101',
+                averages: { 'Quarter 1': 'B+ 89', 'Quarter 2': 'A 93', Total: 'A- 91.5' },
+                average: 'A 93',
+              },
+            ],
+          }
+        : p === 'hac'
         ? {
             scoresIncluded: true,
             termList: ['1', '2', '3', '4', '5', '6'],
@@ -440,14 +615,19 @@ const OPERATIONS = [
       }),
     example: (p) => ({
       scoresIncluded: true,
-      termList: p === 'hac' ? ['1', '2', '3', '4', '5', '6'] : p === 'powerschool' ? ['P1', 'C1', 'P2'] : ['PR1', 'PR2'],
-      term: p === 'hac' ? '2' : p === 'powerschool' ? 'P2' : 'PR2',
+      termList:
+        p === 'hac' ? ['1', '2', '3', '4', '5', '6']
+          : p === 'canvas' ? ['Quarter 1', 'Quarter 2', 'Total']
+          : p === 'powerschool' ? ['P1', 'C1', 'P2']
+          : ['PR1', 'PR2'],
+      term: p === 'hac' ? '2' : p === 'canvas' ? 'Quarter 2' : p === 'powerschool' ? 'P2' : 'PR2',
       class: {
-        course: p === 'hac' ? '0001A - 110' : 'MTH401',
+        course: p === 'hac' ? '0001A - 110' : p === 'canvas' ? '101' : 'MTH401',
         name: p === 'hac' ? 'COMPUTER SCIENCE' : 'AP Calculus BC',
-        period: '3',
+        period: p === 'canvas' ? '' : '3',
         teacher: 'Nguyen, Alex',
-        average: '93',
+        average: p === 'canvas' ? 'A 93' : '93',
+        ...(p === 'canvas' ? { averageType: 'categorywise' } : {}),
         scores: [
           { name: 'Unit 2 Test', category: 'Tests', dateDue: '09/11/2026', dateAssigned: '09/11/2026', score: '45', totalPoints: 50, weight: 1, weightedScore: 45, weightedTotalPoints: 50, percentage: '90%', badges: [] },
           { name: 'Homework 2.4', category: 'Homework', dateDue: '09/09/2026', dateAssigned: '09/08/2026', score: '', totalPoints: 10, weight: 1, weightedScore: '', weightedTotalPoints: 10, percentage: '0%', badges: ['missing'] },
@@ -515,7 +695,10 @@ const OPERATIONS = [
     summary: 'Teachers and contact emails.',
     description: 'One entry per class with the teacher’s name and email.',
     response: () => S({ teachers: { type: 'array', items: S({ class: { type: 'string' }, teacher: { type: 'string' }, email: { type: 'string' } }) } }),
-    example: () => ({ teachers: [{ class: 'COMPUTER SCIENCE', teacher: 'Smith, John', email: 'john.smith@example.k12.us' }] }),
+    example: (p) =>
+      p === 'canvas'
+        ? { teachers: [{ class: 'AP Calculus BC', course: '101', teacher: 'Nguyen, Alex', email: '', room: '', teachers: [{ id: '900', name: 'Nguyen, Alex', avatar: '' }] }] }
+        : { teachers: [{ class: 'COMPUTER SCIENCE', teacher: 'Smith, John', email: 'john.smith@example.k12.us' }] },
   },
   {
     key: 'reportCard',
@@ -559,6 +742,112 @@ const OPERATIONS = [
       transcriptData: {
         '2025 - Semester 1': { year: '2025', semester: '1', grade: '09', school: 'Cypress Ridge HS', data: [['Course', 'Description', 'Sem1', 'Credits'], ['0001A', 'COMPUTER SCIENCE', '96', '0.5']], credits: '3.5' },
       },
+    }),
+  },
+  {
+    key: 'assignments',
+    path: '/assignments',
+    title: 'Assignments',
+    group: 'Grades',
+    summary: 'Every assignment across every class, with dates (Canvas only).',
+    description:
+      'The LMS-only route. A gradebook portal only ever shows assignments underneath a class; Canvas has them as first-class objects with real due / unlock / lock timestamps, submission state and class statistics, so this returns one flat list across every course — enough to render “what’s due this week” without a `/single-class` call per class.\n\nScope it with `options.term` (a grading period), narrow it to one course with `options.course`, and filter with `options.status`, `options.dueAfter` / `options.dueBefore` and `options.limit`. Results are sorted by due date, soonest first, with undated work last; `counts` always reflects the full match even when `limit` truncates the list.\n\n`description` (Canvas’s HTML body) is omitted unless you ask for it — it is frequently enormous. If a course cannot be read (locked, or rate-limited), the rest still come back and the course is named in `unavailable`.',
+    response: () => ({
+      allOf: [
+        ref('TermFields'),
+        S({
+          counts: {
+            type: 'object',
+            description: '`total` plus a tally per `status`, over every match (not just the returned page).',
+            additionalProperties: { type: 'integer' },
+          },
+          assignments: { type: 'array', items: ref('Assignment') },
+          unavailable: {
+            type: 'array',
+            description: 'Courses whose assignments could not be read. Absent when everything succeeded.',
+            items: S({ course: { type: 'string' }, name: { type: 'string' }, reason: { type: 'string' } }),
+          },
+        }),
+      ],
+    }),
+    example: () => ({
+      termsIncluded: true,
+      hasSubterms: false,
+      termList: ['Quarter 1', 'Quarter 2', 'Total'],
+      termTree: [
+        { label: 'Quarter 1', children: [] },
+        { label: 'Quarter 2', children: [] },
+        { label: 'Total', children: [] },
+      ],
+      term: 'Quarter 2',
+      currentTerms: ['Total', 'Quarter 2'],
+      counts: { total: 3, graded: 1, missing: 1, upcoming: 1 },
+      assignments: [
+        {
+          id: '1001',
+          course: '101',
+          courseName: 'AP Calculus BC',
+          courseCode: 'MTH401',
+          name: 'Unit 2 Test',
+          category: 'Tests',
+          url: 'https://district.instructure.com/courses/101/assignments/1001',
+          dueAt: '2026-09-12T04:59:00Z',
+          dueDate: '9/11/2026',
+          dueTime: '11:59 PM',
+          unlockAt: null,
+          unlockDate: '',
+          lockAt: null,
+          lockDate: '',
+          daysUntilDue: -8,
+          pointsPossible: 50,
+          gradingType: 'points',
+          submissionTypes: ['online_upload'],
+          published: true,
+          omitFromFinalGrade: false,
+          status: 'graded',
+          submitted: true,
+          submittedAt: '2026-09-11T22:14:00Z',
+          graded: true,
+          gradedAt: '2026-09-13T15:02:00Z',
+          attempt: 1,
+          score: 45,
+          grade: '45',
+          percentage: '90%',
+          pointsDeducted: null,
+          badges: [],
+          statistics: { min: 50, max: 100, mean: 84 },
+        },
+        {
+          id: '1003',
+          course: '101',
+          courseName: 'AP Calculus BC',
+          courseCode: 'MTH401',
+          name: 'Homework 2.4',
+          category: 'Homework',
+          url: 'https://district.instructure.com/courses/101/assignments/1003',
+          dueAt: '2026-09-17T04:59:00Z',
+          dueDate: '9/16/2026',
+          dueTime: '11:59 PM',
+          daysUntilDue: -3,
+          pointsPossible: 10,
+          gradingType: 'points',
+          submissionTypes: ['online_text_entry'],
+          published: true,
+          omitFromFinalGrade: false,
+          status: 'missing',
+          submitted: false,
+          submittedAt: null,
+          graded: false,
+          gradedAt: null,
+          attempt: null,
+          score: null,
+          grade: null,
+          percentage: null,
+          pointsDeducted: null,
+          badges: ['missing'],
+          statistics: null,
+        },
+      ],
     }),
   },
 ];
@@ -647,7 +936,11 @@ for (const platform of PLATFORMS) {
         S({ loginType: { type: 'string', enum: platform.loginTypes }, ...(options && op.key !== 'login' ? { options } : {}) }),
       ],
     };
-    const loginData = { link: platform.exampleLink, username: 's123456', password: '••••••••' };
+    const primaryLoginType = platform.loginTypes[0];
+    const loginData =
+      primaryLoginType === 'token'
+        ? { link: platform.exampleLink, token: '1234~••••••••' }
+        : { link: platform.exampleLink, username: 's123456', password: '••••••••' };
     const responses = {
       200: {
         description: op.key === 'login' ? 'Authenticated (or `MfaChallenge` for ClassLink 2FA).' : 'OK',
@@ -689,7 +982,7 @@ for (const platform of PLATFORMS) {
             'application/json': {
               schema: body,
               example: {
-                loginType: 'credentials',
+                loginType: primaryLoginType,
                 loginData,
                 ...(options && op.key !== 'login' ? { options: Object.fromEntries(Object.entries(options.properties).map(([k, v]) => [k, v.example || (k === 'class' ? 'AP Calculus BC' : k === 'term' ? '' : k === 'studentId' ? '4821' : '')])) } : {}),
               },

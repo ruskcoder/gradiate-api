@@ -19,6 +19,7 @@ import { defaultFormatLink, assertSafeHttpUrl } from '../platform.js';
 import { AuthenticationError, ValidationError, APIError } from '../errors.js';
 import { loginClassLink } from './classlink.js';
 import { loginMicrosoft } from './microsoft.js';
+import { applyToken, tokenFrom } from './token.js';
 
 const SSO_LOGIN_TYPES = new Set(['classlink', 'classlinkCredentials', 'microsoft']);
 
@@ -53,6 +54,20 @@ function resolveLink(platform, loginData) {
  * can pick up the pending challenge rather than starting from scratch.
  */
 async function performLogin(platform, loginType, loginData, progressTracker, resumeSessionData) {
+  // API-token login: the token IS the session, so there is nothing to negotiate
+  // — resolve the link, stamp the bearer header, done. Validity is proven by the
+  // platform's own probe (`homeEndpoint` + `isSessionExpired`) or by the first
+  // data call, which keeps this path free for the transparent-relogin closure.
+  if (loginType === 'token') {
+    const session = createSession();
+    const link = resolveLink(platform, loginData);
+    if (!link) throw new ValidationError('link is required for token login');
+    const token = tokenFrom(loginData, session);
+    if (!token) throw new ValidationError('token is required for token login');
+    applyToken(session, token);
+    return { session, link, username: loginData.username };
+  }
+
   if (loginType === 'credentials') {
     const session = createSession();
     const result = await platform.credentialsAuth(session, loginData, progressTracker);
@@ -116,6 +131,22 @@ async function authenticate(req, platform, progressTracker) {
   const { loginType, loginData, existingSession } = validateBody(req, platform);
   progressTracker.update(4, 'Authenticating');
 
+  // A token login's credential lives in the session envelope's `loginMetadata`
+  // as well as in `loginData`, and clients commonly send back only the envelope.
+  // Lift the token into `loginData` once, here, so every downstream path — the
+  // reuse fast path, a fresh login, and the silent relogin closure (which builds
+  // a brand-new session with no metadata to fall back on) — sees one complete
+  // login recipe instead of each having to rediscover it.
+  if (loginType === 'token' && !loginData.token && existingSession) {
+    try {
+      const parsed = typeof existingSession === 'string' ? JSON.parse(existingSession) : existingSession;
+      const stored = parsed?.loginMetadata?.loginData;
+      const token = stored?.token || stored?.accessToken;
+      if (token) loginData.token = token;
+      if (!loginData.link && parsed?.cache?.link) loginData.link = parsed.cache.link;
+    } catch { /* an unparseable envelope just means a fresh login is required */ }
+  }
+
   /**
    * Stamp everything that makes a session usable *and* re-usable onto it:
    * identity, the resolved portal link, the login recipe, and a validation time.
@@ -129,7 +160,12 @@ async function authenticate(req, platform, progressTracker) {
    */
   const stampSession = (session, link, username) => {
     const resolvedUser = username || loginData.username || session.cache?.username || 'unknown';
-    session.setLoginMetadata(loginType, loginData);
+    // Read the bearer token BEFORE the metadata is overwritten: a client that
+    // sends only `session` (no loginData) on a follow-up call carries its token
+    // solely in the session's round-tripped loginMetadata, and setLoginMetadata
+    // below would otherwise drop it.
+    const token = loginType === 'token' ? tokenFrom(loginData, session) : undefined;
+    session.setLoginMetadata(loginType, token && !loginData.token ? { ...loginData, token } : loginData);
     session.username = resolvedUser;
     // Persist the resolved district portal link (and username) in the session
     // cache so they round-trip to the client and back. For SSO logins (ClassLink)
@@ -143,6 +179,9 @@ async function authenticate(req, platform, progressTracker) {
     // that has actually expired is still caught by the reauth wrapper on the next
     // data call, which transparently re-logs-in.
     session.setLastValidationTime(Date.now());
+    // A deserialized session has an empty header set — re-stamp the bearer so a
+    // reused token session is as usable as a freshly-logged-in one.
+    if (token) applyToken(session, token);
     return resolvedUser;
   };
 

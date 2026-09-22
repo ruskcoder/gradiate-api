@@ -15,12 +15,15 @@ function No() {
 }
 
 const FEATURES: { label: string; values: Record<string, boolean | string> }[] = [
-  { label: "Assignments in /classes", values: { hac: true, powerschool: false, "skyward-legacy": false } },
-  { label: "termTree / currentTerms", values: { hac: false, powerschool: true, "skyward-legacy": true } },
-  { label: "Multi-student accounts", values: { hac: false, powerschool: true, "skyward-legacy": false } },
-  { label: "ClassLink SSO + 2FA", values: { hac: true, powerschool: false, "skyward-legacy": false } },
-  { label: "Microsoft sign-in", values: { hac: false, powerschool: true, "skyward-legacy": false } },
-  { label: "Multi-district hosts", values: { hac: true, powerschool: false, "skyward-legacy": false } },
+  { label: "Assignments in /classes", values: { hac: true, powerschool: false, "skyward-legacy": false, canvas: false } },
+  { label: "termTree / currentTerms", values: { hac: false, powerschool: true, "skyward-legacy": true, canvas: true } },
+  { label: "Nested subterms", values: { hac: false, powerschool: true, "skyward-legacy": true, canvas: false } },
+  { label: "Multi-student accounts", values: { hac: false, powerschool: true, "skyward-legacy": false, canvas: false } },
+  { label: "ClassLink SSO + 2FA", values: { hac: true, powerschool: false, "skyward-legacy": false, canvas: false } },
+  { label: "Microsoft sign-in", values: { hac: false, powerschool: true, "skyward-legacy": false, canvas: false } },
+  { label: "API access token", values: { hac: false, powerschool: false, "skyward-legacy": false, canvas: true } },
+  { label: "Multi-district hosts", values: { hac: true, powerschool: false, "skyward-legacy": false, canvas: false } },
+  { label: "Documented upstream API", values: { hac: false, powerschool: false, "skyward-legacy": false, canvas: true } },
 ]
 
 export function ComparisonPage() {
@@ -33,7 +36,7 @@ export function ComparisonPage() {
         description="Every platform speaks the same API. This is where they differ."
       />
 
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {platforms.map((p) => (
           <Link key={p.id} to={`/platforms/${p.id}`} className="group rounded-xl border p-4 transition-colors hover:bg-muted/50">
             <div className="flex items-center justify-between">

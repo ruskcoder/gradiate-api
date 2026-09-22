@@ -6,7 +6,7 @@ Gradiate logs into school district portals on a student’s behalf and returns c
 
 ## Conventions
 
-- All routes are POST with a JSON body, mounted per platform: `/hac`, `/powerschool`, `/skyward-legacy`.
+- All routes are POST with a JSON body, mounted per platform: `/hac`, `/powerschool`, `/skyward-legacy`, `/canvas`.
 - Body: `{ loginType, loginData, session?, options?, stream? }`.
 - Success: `{ success: true, ...data, session }`. Send `session` back on the next call (reused if validated <5 min ago; expired sessions re-login automatically using loginData).
 - Errors: `{ success: false, status, message }` with 400/401/404/429/500.
@@ -51,18 +51,33 @@ Login types: credentials
 - Term labels vary by district (PR1/1ST/SM1, T1–T4, Q1–Q4…). Fall/spring sections of the same course are merged.
 - No SSO login types and no `/ipr`.
 
+### Canvas (`/canvas`)
+
+Instructure Canvas, via its documented REST API and a user access token. The only LMS here — no attendance, report cards or transcripts, but assignments are first-class objects with real due dates.
+
+Login types: token
+
+- Sign in with `loginType: "token"`. The user generates the token in Canvas under **Account → Settings → + New Access Token**; there is no password and no SSO flow to complete.
+- `link` is the Canvas instance URL (`https://district.instructure.com`). Any path is discarded, so pasting the URL of whatever page the user was on works.
+- Terms are Canvas **grading periods** — flat and dated, so `termTree` has no nesting (`hasSubterms: false`). A synthetic `Total` column carries the whole-course grade when the account enables all-grading-period totals, or when there are no grading periods at all.
+- `/classes` returns averages only (`scoresIncluded: false`); fetch assignments per class with `/single-class`, or across every class at once with `/assignments`.
+- `/assignments` is Canvas-only: every assignment with due / unlock / lock timestamps, submission state, score and class statistics, filterable by term, course, status and due-date window.
+- No `/attendance`, `/reportCard`, `/transcript`, `/ipr`, `/schedule` or `/bellSchedule` — Canvas is a learning platform, not a student information system, so those routes return 404.
+- Teacher emails are not exposed by Canvas’s course payload, so `/teachers` returns `email: ""`.
+
 ## Endpoints
 
-- **Log in** (/hac/login, /powerschool/login, /skyward-legacy/login): Authenticate and receive a session envelope.
+- **Log in** (/hac/login, /powerschool/login, /skyward-legacy/login, /canvas/login): Authenticate and receive a session envelope.
 - **List districts** (/hac/districts): Detect multi-district HAC hosts (no auth).
 - **Auth methods** (/powerschool/authMethods): Which sign-in methods a district offers (no auth).
-- **Student info** (/hac/info, /powerschool/info, /skyward-legacy/info): Profile details for the logged-in student.
-- **Classes & grades** (/hac/classes, /powerschool/classes, /skyward-legacy/classes): Every class with its average for a term.
-- **Single class** (/hac/single-class, /powerschool/single-class, /skyward-legacy/single-class): One class with its assignments.
+- **Student info** (/hac/info, /powerschool/info, /skyward-legacy/info, /canvas/info): Profile details for the logged-in student.
+- **Classes & grades** (/hac/classes, /powerschool/classes, /skyward-legacy/classes, /canvas/classes): Every class with its average for a term.
+- **Single class** (/hac/single-class, /powerschool/single-class, /skyward-legacy/single-class, /canvas/single-class): One class with its assignments.
 - **Schedule** (/hac/schedule, /powerschool/schedule, /skyward-legacy/schedule): Class schedule rows.
 - **Bell schedule** (/powerschool/bellSchedule, /skyward-legacy/bellSchedule): Period start/end times.
 - **Attendance** (/hac/attendance, /powerschool/attendance, /skyward-legacy/attendance): Attendance events for a month.
-- **Teachers** (/hac/teachers, /powerschool/teachers, /skyward-legacy/teachers): Teachers and contact emails.
+- **Teachers** (/hac/teachers, /powerschool/teachers, /skyward-legacy/teachers, /canvas/teachers): Teachers and contact emails.
 - **Report cards** (/hac/reportCard, /powerschool/reportCard, /skyward-legacy/reportCard): Report card grades per grading run.
 - **Progress reports** (/hac/ipr): Interim progress reports (HAC only).
 - **Transcript** (/hac/transcript, /skyward-legacy/transcript): Academic history and GPA.
+- **Assignments** (/canvas/assignments): Every assignment across every class, with dates (Canvas only).

@@ -1028,6 +1028,204 @@
           }
         }
       ]
+    },
+    {
+      "name": "Canvas",
+      "description": "Instructure Canvas, via its documented REST API and a user access token. The only LMS here — no attendance, report cards or transcripts, but assignments are first-class objects with real due dates.",
+      "item": [
+        {
+          "name": "Log in",
+          "request": {
+            "method": "POST",
+            "description": "Authenticates only — no data is fetched. A cheap validation probe runs so a bad password or expired session fails here rather than on your next call. Store the returned `session` and send it with every data request.\n\nFor ClassLink logins that hit a second factor, this returns `mfaRequired` (HTTP 200, `success: false`) — re-call with the returned `session` and `loginData.clMFA`.",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/canvas/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "canvas",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"loginType\": \"token\",\n  \"loginData\": {\n    \"link\": \"https://district.instructure.com\",\n    \"token\": \"1234~••••••••\",\n    \"username\": \"{{username}}\",\n    \"password\": \"{{password}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Student info",
+          "request": {
+            "method": "POST",
+            "description": "Name, school, grade and other registration details. Fields a portal does not expose are returned as empty strings.",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/canvas/info",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "canvas",
+                "info"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"loginType\": \"token\",\n  \"loginData\": {\n    \"link\": \"https://district.instructure.com\",\n    \"token\": \"1234~••••••••\",\n    \"username\": \"{{username}}\",\n    \"password\": \"{{password}}\"\n  },\n  \"options\": {\n    \"includeConcluded\": \"\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Classes & grades",
+          "request": {
+            "method": "POST",
+            "description": "Returns all classes for a term plus the term metadata needed to render a term picker. Pass `options.term` to switch terms; omit it for the current term.\n\n`scoresIncluded` tells you whether each class already carries its assignments (HAC) or whether you need `/single-class` (PowerSchool, Skyward).",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/canvas/classes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "canvas",
+                "classes"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"loginType\": \"token\",\n  \"loginData\": {\n    \"link\": \"https://district.instructure.com\",\n    \"token\": \"1234~••••••••\",\n    \"username\": \"{{username}}\",\n    \"password\": \"{{password}}\"\n  },\n  \"options\": {\n    \"term\": \"\",\n    \"includeConcluded\": \"\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Single class",
+          "request": {
+            "method": "POST",
+            "description": "Fetches one class and its assignment scores for a term. Identify the class with `options.class` (name) or, on PowerSchool and Skyward, `options.course` (id — more reliable when two sections share a name).",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/canvas/single-class",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "canvas",
+                "single-class"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"loginType\": \"token\",\n  \"loginData\": {\n    \"link\": \"https://district.instructure.com\",\n    \"token\": \"1234~••••••••\",\n    \"username\": \"{{username}}\",\n    \"password\": \"{{password}}\"\n  },\n  \"options\": {\n    \"class\": \"AP Calculus BC\",\n    \"course\": \"\",\n    \"term\": \"\",\n    \"includeConcluded\": \"\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Teachers",
+          "request": {
+            "method": "POST",
+            "description": "One entry per class with the teacher’s name and email.",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/canvas/teachers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "canvas",
+                "teachers"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"loginType\": \"token\",\n  \"loginData\": {\n    \"link\": \"https://district.instructure.com\",\n    \"token\": \"1234~••••••••\",\n    \"username\": \"{{username}}\",\n    \"password\": \"{{password}}\"\n  },\n  \"options\": {\n    \"includeConcluded\": \"\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Assignments",
+          "request": {
+            "method": "POST",
+            "description": "The LMS-only route. A gradebook portal only ever shows assignments underneath a class; Canvas has them as first-class objects with real due / unlock / lock timestamps, submission state and class statistics, so this returns one flat list across every course — enough to render “what’s due this week” without a `/single-class` call per class.\n\nScope it with `options.term` (a grading period), narrow it to one course with `options.course`, and filter with `options.status`, `options.dueAfter` / `options.dueBefore` and `options.limit`. Results are sorted by due date, soonest first, with undated work last; `counts` always reflects the full match even when `limit` truncates the list.\n\n`description` (Canvas’s HTML body) is omitted unless you ask for it — it is frequently enormous. If a course cannot be read (locked, or rate-limited), the rest still come back and the course is named in `unavailable`.",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/canvas/assignments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "canvas",
+                "assignments"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"loginType\": \"token\",\n  \"loginData\": {\n    \"link\": \"https://district.instructure.com\",\n    \"token\": \"1234~••••••••\",\n    \"username\": \"{{username}}\",\n    \"password\": \"{{password}}\"\n  },\n  \"options\": {\n    \"term\": \"\",\n    \"course\": \"\",\n    \"class\": \"AP Calculus BC\",\n    \"status\": \"upcoming\",\n    \"dueAfter\": \"\",\n    \"dueBefore\": \"\",\n    \"ungraded\": \"\",\n    \"includeDescription\": \"\",\n    \"limit\": \"\",\n    \"order\": \"\",\n    \"includeConcluded\": \"\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
     }
   ]
 }

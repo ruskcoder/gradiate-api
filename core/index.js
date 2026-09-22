@@ -12,4 +12,5 @@ export { defaultFormatLink, createSessionValidator, streamOrThrow, assertSafeHtt
 export { createLoginValidation } from './validation.js';
 export { authenticate, performLogin } from './auth/index.js';
 export { loginClassLink } from './auth/classlink.js';
+export { applyToken, tokenFrom } from './auth/token.js';
 export { createPlatformRoutes, ROUTE_TABLE } from './routes.js';

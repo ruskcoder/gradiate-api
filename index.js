@@ -52,11 +52,12 @@ import { createPlatformRoutes } from './core/index.js';
 import hac from './hac/index.js';
 import skywardLegacy from './skyward-legacy/index.js';
 import powerschool from './powerschool/index.js';
+import canvas from './canvas/index.js';
 import demo from './demo/index.js';
 
 // Every platform is a registry object; core turns it into routes and mounts it
 // at its declared prefix. Add a platform by importing it and pushing it here.
-const platforms = [hac, skywardLegacy, powerschool];
+const platforms = [hac, skywardLegacy, powerschool, canvas];
 
 // All origins are allowed (Vercel preview deployments use unpredictable hosts).
 // The API uses no cookies/credentials from the browser, so this is safe.

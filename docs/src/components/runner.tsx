@@ -293,7 +293,7 @@ export function Runner({ opKey, platformId }: { opKey: string; platformId: strin
                   {Object.entries<any>(loginFields.properties || {})
                     .filter(([field]) => field !== "district" || platformId === "hac")
                     .map(([field, schema]) => {
-                      const wide = field === "link" || field === "cookies" || field === "clsession"
+                      const wide = field === "link" || field === "cookies" || field === "clsession" || field === "token"
                       return (
                         <div key={field} className={cn(wide && "sm:col-span-2")}>
                           <FieldRow label={`loginData.${field}`} required={loginFields.required?.includes(field)}>

@@ -36,6 +36,10 @@ const ROUTE_TABLE = [
   { path: '/reportCard', key: 'reportCard', stage: 'Fetching report cards' },
   { path: '/ipr', key: 'ipr', stage: 'Fetching progress reports' },
   { path: '/transcript', key: 'transcript', stage: 'Fetching transcript' },
+  // LMS-only. A gradebook portal exposes assignments only underneath a class;
+  // an LMS has them as a first-class, cross-course list with real due/unlock/lock
+  // timestamps, so it gets a route of its own. Platforms without one 404 it.
+  { path: '/assignments', key: 'assignments', stage: 'Fetching assignments' },
 ];
 
 function isStreaming(req) {

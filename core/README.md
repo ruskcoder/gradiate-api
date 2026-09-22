@@ -17,6 +17,7 @@ here — never copy them into a platform.
 | `validation.js` | `createLoginValidation` | Standard login-body validation helper |
 | `auth/index.js` | `authenticate`, `performLogin` | The one auth entry point: validate → reuse/relogin → dispatch by loginType |
 | `auth/classlink.js` | `loginClassLink` | Generic ClassLink SSO (clsession + credentials + 2FA icon), tile chosen by `ssoFilter` |
+| `auth/token.js` | `applyToken`, `tokenFrom` | Bearer-token login (`Authorization: Bearer`) for portals whose API credential *is* the session |
 | `auth/microsoft.js` | `loginMicrosoft` | Microsoft SSO extension point (stub) |
 | `routes.js` | `createPlatformRoutes`, `ROUTE_TABLE` | Builds a router from a platform registry |
 
@@ -31,7 +32,7 @@ A platform's `index.js` default-exports:
   name: 'HAC',
   mount: '/hac',                                  // URL prefix
   ssoFilter: ['hac', 'homeaccess'],               // picks the SSO dashboard tile
-  loginTypes: ['credentials', 'classlink'],       // which logins this portal accepts
+  loginTypes: ['credentials', 'classlink'],       // which logins this portal accepts ('token' too)
   homeEndpoint: 'HomeAccess',                      // path for the cheap session probe
   formatLink,                                      // (raw) => normalized base URL
   credentialsAuth,                                 // (session, loginData, progress) => { session, username }
@@ -39,6 +40,7 @@ A platform's `index.js` default-exports:
   finalizeSSO,                                     // optional (session, link, ctx) => { session, link }
   data: {                                          // (session, link, options, progress) => data
     info, classes, singleClass, schedule, attendance, teachers, ipr, reportCard, transcript,
+    assignments,                                   // LMS-only
   },
 }
 ```
@@ -77,3 +79,11 @@ See [`../template`](../template/README.md) for the full walkthrough and
 Implement it once in `core/auth/` (mirroring `classlink.js`) and wire it into the
 dispatch in `auth/index.js`. Platforms opt in by listing it in `loginTypes` and
 providing an `ssoFilter` — no platform code changes.
+
+`token` is the one login type with no cookie: the credential travels in an
+`Authorization: Bearer` header, which a deserialized session does not carry, so
+`stampSession` re-applies it on every reused session (reading the token from the
+request or from the session's own round-tripped `loginMetadata`). It also relaxes
+`validateStatus`, because a token API reports a rejected credential with a status
+code and a JSON body that the platform — and `isSessionExpired`, which only ever
+sees bodies — needs to read. See [`../canvas`](../canvas/README.md).

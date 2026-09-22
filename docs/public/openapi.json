@@ -27,6 +27,10 @@
     {
       "name": "Skyward Legacy",
       "description": "Classic Skyward Student & Family Access. Credentials only; term/subterm tabs are reconstructed from the gradebook itself."
+    },
+    {
+      "name": "Canvas",
+      "description": "Instructure Canvas, via its documented REST API and a user access token. The only LMS here — no attendance, report cards or transcripts, but assignments are first-class objects with real due dates."
     }
   ],
   "paths": {
@@ -6660,6 +6664,1583 @@
           }
         }
       }
+    },
+    "/canvas/login": {
+      "post": {
+        "operationId": "canvas-login",
+        "tags": [
+          "Canvas"
+        ],
+        "summary": "Authenticate and receive a session envelope.",
+        "description": "Authenticates only — no data is fetched. A cheap validation probe runs so a bad password or expired session fails here rather than on your next call. Store the returned `session` and send it with every data request.\n\nFor ClassLink logins that hit a second factor, this returns `mfaRequired` (HTTP 200, `success: false`) — re-call with the returned `session` and `loginData.clMFA`.",
+        "x-operation": "login",
+        "x-platform": "canvas",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/AuthenticatedRequest"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "loginType": {
+                        "type": "string",
+                        "enum": [
+                          "token"
+                        ]
+                      }
+                    }
+                  }
+                ]
+              },
+              "example": {
+                "loginType": "token",
+                "loginData": {
+                  "link": "https://district.instructure.com",
+                  "token": "1234~••••••••"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Authenticated (or `MfaChallenge` for ClassLink 2FA).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "success": {
+                          "type": "boolean",
+                          "const": true
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "properties": {}
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "session": {
+                          "$ref": "#/components/schemas/Session"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "example": {
+                  "success": true,
+                  "session": {
+                    "cookies": {
+                      "version": "tough-cookie@5.0.0",
+                      "storeType": "MemoryCookieStore",
+                      "cookies": [
+                        {
+                          "key": "ASP.NET_SessionId",
+                          "value": "…",
+                          "domain": "homeaccess.example.org"
+                        }
+                      ]
+                    },
+                    "cache": {
+                      "lastValidationTime": 1789300000000,
+                      "link": "https://homeaccess.example.org/",
+                      "username": "s123456"
+                    },
+                    "loginMetadata": {
+                      "loginType": "credentials",
+                      "loginData": {
+                        "link": "https://homeaccess.example.org",
+                        "username": "s123456"
+                      }
+                    }
+                  }
+                }
+              },
+              "text/event-stream": {
+                "description": "When `stream: true`: newline-delimited progress objects separated by blank lines, followed by the final JSON body.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "{\"percent\":4,\"message\":\"Authenticating\"}\n\n{\"percent\":50,\"message\":\"Fetching classes\"}\n\n{\"success\":true,…}"
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error (bad `loginType`, missing params, unsafe link).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "success": false,
+                  "status": 400,
+                  "message": "loginType must be one of: credentials, classlink, classlinkCredentials"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid credentials or expired session that could not be renewed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "success": false,
+                  "status": 401,
+                  "message": "Invalid session or password"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded (120 requests/minute per IP by default).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "success": false,
+                  "message": "Too many requests, please slow down."
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Portal changed or unexpected failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/canvas/info": {
+      "post": {
+        "operationId": "canvas-info",
+        "tags": [
+          "Canvas"
+        ],
+        "summary": "Profile details for the logged-in student.",
+        "description": "Name, school, grade and other registration details. Fields a portal does not expose are returned as empty strings.",
+        "x-operation": "info",
+        "x-platform": "canvas",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/AuthenticatedRequest"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "loginType": {
+                        "type": "string",
+                        "enum": [
+                          "token"
+                        ]
+                      },
+                      "options": {
+                        "type": "object",
+                        "properties": {
+                          "includeConcluded": {
+                            "type": "boolean",
+                            "description": "Read concluded enrollments instead of active ones."
+                          }
+                        }
+                      }
+                    }
+                  }
+                ]
+              },
+              "example": {
+                "loginType": "token",
+                "loginData": {
+                  "link": "https://district.instructure.com",
+                  "token": "1234~••••••••"
+                },
+                "options": {
+                  "includeConcluded": ""
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "success": {
+                          "type": "boolean",
+                          "const": true
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        },
+                        "grade": {
+                          "type": "string"
+                        },
+                        "school": {
+                          "type": "string"
+                        },
+                        "district": {
+                          "type": "string"
+                        },
+                        "dob": {
+                          "type": "string"
+                        },
+                        "counselor": {
+                          "type": "string"
+                        },
+                        "language": {
+                          "type": "string"
+                        },
+                        "userId": {
+                          "type": "string",
+                          "description": "Canvas user id."
+                        },
+                        "username": {
+                          "type": "string",
+                          "description": "Canvas login id."
+                        },
+                        "email": {
+                          "type": "string"
+                        },
+                        "avatar": {
+                          "type": "string"
+                        },
+                        "timeZone": {
+                          "type": "string",
+                          "description": "The user’s Canvas time zone — every date on this platform is rendered in it."
+                        },
+                        "bio": {
+                          "type": "string"
+                        },
+                        "courseCount": {
+                          "type": "integer"
+                        },
+                        "enrollmentTerms": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "link": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "session": {
+                          "$ref": "#/components/schemas/Session"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "example": {
+                  "success": true,
+                  "name": "Jordan Rivera",
+                  "grade": "",
+                  "school": "Cypress Ridge High School",
+                  "district": "",
+                  "dob": "",
+                  "counselor": "",
+                  "language": "en",
+                  "userId": "4821",
+                  "username": "s123456",
+                  "email": "jordan@example.k12.us",
+                  "avatar": "https://district.instructure.com/images/thumbnails/1.png",
+                  "timeZone": "America/Chicago",
+                  "bio": "",
+                  "courseCount": 7,
+                  "enrollmentTerms": [
+                    "Fall 2026"
+                  ],
+                  "link": "https://district.instructure.com/",
+                  "session": {
+                    "cookies": {
+                      "version": "tough-cookie@5.0.0",
+                      "storeType": "MemoryCookieStore",
+                      "cookies": [
+                        {
+                          "key": "ASP.NET_SessionId",
+                          "value": "…",
+                          "domain": "homeaccess.example.org"
+                        }
+                      ]
+                    },
+                    "cache": {
+                      "lastValidationTime": 1789300000000,
+                      "link": "https://homeaccess.example.org/",
+                      "username": "s123456"
+                    },
+                    "loginMetadata": {
+                      "loginType": "credentials",
+                      "loginData": {
+                        "link": "https://homeaccess.example.org",
+                        "username": "s123456"
+                      }
+                    }
+                  }
+                }
+              },
+              "text/event-stream": {
+                "description": "When `stream: true`: newline-delimited progress objects separated by blank lines, followed by the final JSON body.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "{\"percent\":4,\"message\":\"Authenticating\"}\n\n{\"percent\":50,\"message\":\"Fetching classes\"}\n\n{\"success\":true,…}"
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error (bad `loginType`, missing params, unsafe link).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "success": false,
+                  "status": 400,
+                  "message": "loginType must be one of: credentials, classlink, classlinkCredentials"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid credentials or expired session that could not be renewed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "success": false,
+                  "status": 401,
+                  "message": "Invalid session or password"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found (e.g. no bell schedule) or class not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded (120 requests/minute per IP by default).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "success": false,
+                  "message": "Too many requests, please slow down."
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Portal changed or unexpected failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/canvas/classes": {
+      "post": {
+        "operationId": "canvas-classes",
+        "tags": [
+          "Canvas"
+        ],
+        "summary": "Every class with its average for a term.",
+        "description": "Returns all classes for a term plus the term metadata needed to render a term picker. Pass `options.term` to switch terms; omit it for the current term.\n\n`scoresIncluded` tells you whether each class already carries its assignments (HAC) or whether you need `/single-class` (PowerSchool, Skyward).",
+        "x-operation": "classes",
+        "x-platform": "canvas",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/AuthenticatedRequest"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "loginType": {
+                        "type": "string",
+                        "enum": [
+                          "token"
+                        ]
+                      },
+                      "options": {
+                        "type": "object",
+                        "properties": {
+                          "term": {
+                            "type": "string",
+                            "description": "Term label from `termList`. Defaults to the current term."
+                          },
+                          "includeConcluded": {
+                            "type": "boolean",
+                            "description": "Read concluded enrollments instead of active ones."
+                          }
+                        }
+                      }
+                    }
+                  }
+                ]
+              },
+              "example": {
+                "loginType": "token",
+                "loginData": {
+                  "link": "https://district.instructure.com",
+                  "token": "1234~••••••••"
+                },
+                "options": {
+                  "term": "",
+                  "includeConcluded": ""
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "success": {
+                          "type": "boolean",
+                          "const": true
+                        }
+                      }
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/TermFields"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "scoresIncluded": {
+                              "type": "boolean"
+                            },
+                            "classes": {
+                              "type": "array",
+                              "items": {
+                                "$ref": "#/components/schemas/Class"
+                              }
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "session": {
+                          "$ref": "#/components/schemas/Session"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "example": {
+                  "success": true,
+                  "scoresIncluded": false,
+                  "termsIncluded": true,
+                  "hasSubterms": false,
+                  "termList": [
+                    "Quarter 1",
+                    "Quarter 2",
+                    "Total"
+                  ],
+                  "termTree": [
+                    {
+                      "label": "Quarter 1",
+                      "children": []
+                    },
+                    {
+                      "label": "Quarter 2",
+                      "children": []
+                    },
+                    {
+                      "label": "Total",
+                      "children": []
+                    }
+                  ],
+                  "term": "Quarter 2",
+                  "currentTerms": [
+                    "Total",
+                    "Quarter 2"
+                  ],
+                  "classes": [
+                    {
+                      "course": "101",
+                      "name": "AP Calculus BC",
+                      "code": "MTH401",
+                      "period": "",
+                      "teacher": "Nguyen, Alex",
+                      "email": "",
+                      "room": "",
+                      "termName": "Fall 2026",
+                      "url": "https://district.instructure.com/courses/101",
+                      "averages": {
+                        "Quarter 1": "B+ 89",
+                        "Quarter 2": "A 93",
+                        "Total": "A- 91.5"
+                      },
+                      "average": "A 93"
+                    }
+                  ],
+                  "session": {
+                    "cookies": {
+                      "version": "tough-cookie@5.0.0",
+                      "storeType": "MemoryCookieStore",
+                      "cookies": [
+                        {
+                          "key": "ASP.NET_SessionId",
+                          "value": "…",
+                          "domain": "homeaccess.example.org"
+                        }
+                      ]
+                    },
+                    "cache": {
+                      "lastValidationTime": 1789300000000,
+                      "link": "https://homeaccess.example.org/",
+                      "username": "s123456"
+                    },
+                    "loginMetadata": {
+                      "loginType": "credentials",
+                      "loginData": {
+                        "link": "https://homeaccess.example.org",
+                        "username": "s123456"
+                      }
+                    }
+                  }
+                }
+              },
+              "text/event-stream": {
+                "description": "When `stream: true`: newline-delimited progress objects separated by blank lines, followed by the final JSON body.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "{\"percent\":4,\"message\":\"Authenticating\"}\n\n{\"percent\":50,\"message\":\"Fetching classes\"}\n\n{\"success\":true,…}"
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error (bad `loginType`, missing params, unsafe link).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "success": false,
+                  "status": 400,
+                  "message": "loginType must be one of: credentials, classlink, classlinkCredentials"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid credentials or expired session that could not be renewed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "success": false,
+                  "status": 401,
+                  "message": "Invalid session or password"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found (e.g. no bell schedule) or class not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded (120 requests/minute per IP by default).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "success": false,
+                  "message": "Too many requests, please slow down."
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Portal changed or unexpected failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/canvas/single-class": {
+      "post": {
+        "operationId": "canvas-singleClass",
+        "tags": [
+          "Canvas"
+        ],
+        "summary": "One class with its assignments.",
+        "description": "Fetches one class and its assignment scores for a term. Identify the class with `options.class` (name) or, on PowerSchool and Skyward, `options.course` (id — more reliable when two sections share a name).",
+        "x-operation": "singleClass",
+        "x-platform": "canvas",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/AuthenticatedRequest"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "loginType": {
+                        "type": "string",
+                        "enum": [
+                          "token"
+                        ]
+                      },
+                      "options": {
+                        "type": "object",
+                        "properties": {
+                          "class": {
+                            "type": "string",
+                            "description": "Class name, exactly as returned in `classes[].name`."
+                          },
+                          "course": {
+                            "type": "string",
+                            "description": "Course id from `classes[].course` (preferred over `class` when both exist)."
+                          },
+                          "term": {
+                            "type": "string",
+                            "description": "Term label from `termList`. Defaults to the current term."
+                          },
+                          "includeConcluded": {
+                            "type": "boolean",
+                            "description": "Read concluded enrollments instead of active ones."
+                          }
+                        }
+                      }
+                    }
+                  }
+                ]
+              },
+              "example": {
+                "loginType": "token",
+                "loginData": {
+                  "link": "https://district.instructure.com",
+                  "token": "1234~••••••••"
+                },
+                "options": {
+                  "class": "AP Calculus BC",
+                  "course": "",
+                  "term": "",
+                  "includeConcluded": ""
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "success": {
+                          "type": "boolean",
+                          "const": true
+                        }
+                      }
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/TermFields"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "scoresIncluded": {
+                              "type": "boolean"
+                            },
+                            "class": {
+                              "$ref": "#/components/schemas/Class"
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "session": {
+                          "$ref": "#/components/schemas/Session"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "example": {
+                  "success": true,
+                  "scoresIncluded": true,
+                  "termList": [
+                    "Quarter 1",
+                    "Quarter 2",
+                    "Total"
+                  ],
+                  "term": "Quarter 2",
+                  "class": {
+                    "course": "101",
+                    "name": "AP Calculus BC",
+                    "period": "",
+                    "teacher": "Nguyen, Alex",
+                    "average": "A 93",
+                    "averageType": "categorywise",
+                    "scores": [
+                      {
+                        "name": "Unit 2 Test",
+                        "category": "Tests",
+                        "dateDue": "09/11/2026",
+                        "dateAssigned": "09/11/2026",
+                        "score": "45",
+                        "totalPoints": 50,
+                        "weight": 1,
+                        "weightedScore": 45,
+                        "weightedTotalPoints": 50,
+                        "percentage": "90%",
+                        "badges": []
+                      },
+                      {
+                        "name": "Homework 2.4",
+                        "category": "Homework",
+                        "dateDue": "09/09/2026",
+                        "dateAssigned": "09/08/2026",
+                        "score": "",
+                        "totalPoints": 10,
+                        "weight": 1,
+                        "weightedScore": "",
+                        "weightedTotalPoints": 10,
+                        "percentage": "0%",
+                        "badges": [
+                          "missing"
+                        ]
+                      }
+                    ]
+                  },
+                  "session": {
+                    "cookies": {
+                      "version": "tough-cookie@5.0.0",
+                      "storeType": "MemoryCookieStore",
+                      "cookies": [
+                        {
+                          "key": "ASP.NET_SessionId",
+                          "value": "…",
+                          "domain": "homeaccess.example.org"
+                        }
+                      ]
+                    },
+                    "cache": {
+                      "lastValidationTime": 1789300000000,
+                      "link": "https://homeaccess.example.org/",
+                      "username": "s123456"
+                    },
+                    "loginMetadata": {
+                      "loginType": "credentials",
+                      "loginData": {
+                        "link": "https://homeaccess.example.org",
+                        "username": "s123456"
+                      }
+                    }
+                  }
+                }
+              },
+              "text/event-stream": {
+                "description": "When `stream: true`: newline-delimited progress objects separated by blank lines, followed by the final JSON body.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "{\"percent\":4,\"message\":\"Authenticating\"}\n\n{\"percent\":50,\"message\":\"Fetching classes\"}\n\n{\"success\":true,…}"
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error (bad `loginType`, missing params, unsafe link).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "success": false,
+                  "status": 400,
+                  "message": "loginType must be one of: credentials, classlink, classlinkCredentials"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid credentials or expired session that could not be renewed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "success": false,
+                  "status": 401,
+                  "message": "Invalid session or password"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found (e.g. no bell schedule) or class not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded (120 requests/minute per IP by default).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "success": false,
+                  "message": "Too many requests, please slow down."
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Portal changed or unexpected failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/canvas/teachers": {
+      "post": {
+        "operationId": "canvas-teachers",
+        "tags": [
+          "Canvas"
+        ],
+        "summary": "Teachers and contact emails.",
+        "description": "One entry per class with the teacher’s name and email.",
+        "x-operation": "teachers",
+        "x-platform": "canvas",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/AuthenticatedRequest"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "loginType": {
+                        "type": "string",
+                        "enum": [
+                          "token"
+                        ]
+                      },
+                      "options": {
+                        "type": "object",
+                        "properties": {
+                          "includeConcluded": {
+                            "type": "boolean",
+                            "description": "Read concluded enrollments instead of active ones."
+                          }
+                        }
+                      }
+                    }
+                  }
+                ]
+              },
+              "example": {
+                "loginType": "token",
+                "loginData": {
+                  "link": "https://district.instructure.com",
+                  "token": "1234~••••••••"
+                },
+                "options": {
+                  "includeConcluded": ""
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "success": {
+                          "type": "boolean",
+                          "const": true
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "teachers": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "class": {
+                                "type": "string"
+                              },
+                              "teacher": {
+                                "type": "string"
+                              },
+                              "email": {
+                                "type": "string"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "session": {
+                          "$ref": "#/components/schemas/Session"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "example": {
+                  "success": true,
+                  "teachers": [
+                    {
+                      "class": "AP Calculus BC",
+                      "course": "101",
+                      "teacher": "Nguyen, Alex",
+                      "email": "",
+                      "room": "",
+                      "teachers": [
+                        {
+                          "id": "900",
+                          "name": "Nguyen, Alex",
+                          "avatar": ""
+                        }
+                      ]
+                    }
+                  ],
+                  "session": {
+                    "cookies": {
+                      "version": "tough-cookie@5.0.0",
+                      "storeType": "MemoryCookieStore",
+                      "cookies": [
+                        {
+                          "key": "ASP.NET_SessionId",
+                          "value": "…",
+                          "domain": "homeaccess.example.org"
+                        }
+                      ]
+                    },
+                    "cache": {
+                      "lastValidationTime": 1789300000000,
+                      "link": "https://homeaccess.example.org/",
+                      "username": "s123456"
+                    },
+                    "loginMetadata": {
+                      "loginType": "credentials",
+                      "loginData": {
+                        "link": "https://homeaccess.example.org",
+                        "username": "s123456"
+                      }
+                    }
+                  }
+                }
+              },
+              "text/event-stream": {
+                "description": "When `stream: true`: newline-delimited progress objects separated by blank lines, followed by the final JSON body.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "{\"percent\":4,\"message\":\"Authenticating\"}\n\n{\"percent\":50,\"message\":\"Fetching classes\"}\n\n{\"success\":true,…}"
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error (bad `loginType`, missing params, unsafe link).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "success": false,
+                  "status": 400,
+                  "message": "loginType must be one of: credentials, classlink, classlinkCredentials"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid credentials or expired session that could not be renewed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "success": false,
+                  "status": 401,
+                  "message": "Invalid session or password"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found (e.g. no bell schedule) or class not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded (120 requests/minute per IP by default).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "success": false,
+                  "message": "Too many requests, please slow down."
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Portal changed or unexpected failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/canvas/assignments": {
+      "post": {
+        "operationId": "canvas-assignments",
+        "tags": [
+          "Canvas"
+        ],
+        "summary": "Every assignment across every class, with dates (Canvas only).",
+        "description": "The LMS-only route. A gradebook portal only ever shows assignments underneath a class; Canvas has them as first-class objects with real due / unlock / lock timestamps, submission state and class statistics, so this returns one flat list across every course — enough to render “what’s due this week” without a `/single-class` call per class.\n\nScope it with `options.term` (a grading period), narrow it to one course with `options.course`, and filter with `options.status`, `options.dueAfter` / `options.dueBefore` and `options.limit`. Results are sorted by due date, soonest first, with undated work last; `counts` always reflects the full match even when `limit` truncates the list.\n\n`description` (Canvas’s HTML body) is omitted unless you ask for it — it is frequently enormous. If a course cannot be read (locked, or rate-limited), the rest still come back and the course is named in `unavailable`.",
+        "x-operation": "assignments",
+        "x-platform": "canvas",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/AuthenticatedRequest"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "loginType": {
+                        "type": "string",
+                        "enum": [
+                          "token"
+                        ]
+                      },
+                      "options": {
+                        "type": "object",
+                        "properties": {
+                          "term": {
+                            "type": "string",
+                            "description": "Term label from `termList`. Defaults to the current term."
+                          },
+                          "course": {
+                            "type": "string",
+                            "description": "Course id from `classes[].course` (preferred over `class` when both exist)."
+                          },
+                          "class": {
+                            "type": "string",
+                            "description": "Class name, exactly as returned in `classes[].name`."
+                          },
+                          "status": {
+                            "description": "Keep only assignments in these states. One value or a list; `late`, `missing` and `excused` also match the corresponding `badges`, so graded-but-late work still shows up.",
+                            "oneOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              }
+                            ],
+                            "example": "upcoming"
+                          },
+                          "dueAfter": {
+                            "type": "string",
+                            "format": "date-time",
+                            "description": "Keep only assignments due at or after this date."
+                          },
+                          "dueBefore": {
+                            "type": "string",
+                            "format": "date-time",
+                            "description": "Keep only assignments due at or before this date."
+                          },
+                          "ungraded": {
+                            "type": "boolean",
+                            "description": "Set `false` to drop assignments that do not count toward the grade."
+                          },
+                          "includeDescription": {
+                            "type": "boolean",
+                            "description": "Include each assignment’s HTML body. Off by default — it is frequently very large."
+                          },
+                          "limit": {
+                            "type": "integer",
+                            "description": "Cap how many assignments are returned, after sorting. `counts` still reflects the full match."
+                          },
+                          "order": {
+                            "type": "string",
+                            "enum": [
+                              "due",
+                              "recent",
+                              "course"
+                            ],
+                            "default": "due",
+                            "description": "Sort order. Undated work always sorts last."
+                          },
+                          "includeConcluded": {
+                            "type": "boolean",
+                            "description": "Read concluded enrollments instead of active ones."
+                          }
+                        }
+                      }
+                    }
+                  }
+                ]
+              },
+              "example": {
+                "loginType": "token",
+                "loginData": {
+                  "link": "https://district.instructure.com",
+                  "token": "1234~••••••••"
+                },
+                "options": {
+                  "term": "",
+                  "course": "",
+                  "class": "AP Calculus BC",
+                  "status": "upcoming",
+                  "dueAfter": "",
+                  "dueBefore": "",
+                  "ungraded": "",
+                  "includeDescription": "",
+                  "limit": "",
+                  "order": "",
+                  "includeConcluded": ""
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "success": {
+                          "type": "boolean",
+                          "const": true
+                        }
+                      }
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/TermFields"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "counts": {
+                              "type": "object",
+                              "description": "`total` plus a tally per `status`, over every match (not just the returned page).",
+                              "additionalProperties": {
+                                "type": "integer"
+                              }
+                            },
+                            "assignments": {
+                              "type": "array",
+                              "items": {
+                                "$ref": "#/components/schemas/Assignment"
+                              }
+                            },
+                            "unavailable": {
+                              "type": "array",
+                              "description": "Courses whose assignments could not be read. Absent when everything succeeded.",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "course": {
+                                    "type": "string"
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "reason": {
+                                    "type": "string"
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "session": {
+                          "$ref": "#/components/schemas/Session"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "example": {
+                  "success": true,
+                  "termsIncluded": true,
+                  "hasSubterms": false,
+                  "termList": [
+                    "Quarter 1",
+                    "Quarter 2",
+                    "Total"
+                  ],
+                  "termTree": [
+                    {
+                      "label": "Quarter 1",
+                      "children": []
+                    },
+                    {
+                      "label": "Quarter 2",
+                      "children": []
+                    },
+                    {
+                      "label": "Total",
+                      "children": []
+                    }
+                  ],
+                  "term": "Quarter 2",
+                  "currentTerms": [
+                    "Total",
+                    "Quarter 2"
+                  ],
+                  "counts": {
+                    "total": 3,
+                    "graded": 1,
+                    "missing": 1,
+                    "upcoming": 1
+                  },
+                  "assignments": [
+                    {
+                      "id": "1001",
+                      "course": "101",
+                      "courseName": "AP Calculus BC",
+                      "courseCode": "MTH401",
+                      "name": "Unit 2 Test",
+                      "category": "Tests",
+                      "url": "https://district.instructure.com/courses/101/assignments/1001",
+                      "dueAt": "2026-09-12T04:59:00Z",
+                      "dueDate": "9/11/2026",
+                      "dueTime": "11:59 PM",
+                      "unlockAt": null,
+                      "unlockDate": "",
+                      "lockAt": null,
+                      "lockDate": "",
+                      "daysUntilDue": -8,
+                      "pointsPossible": 50,
+                      "gradingType": "points",
+                      "submissionTypes": [
+                        "online_upload"
+                      ],
+                      "published": true,
+                      "omitFromFinalGrade": false,
+                      "status": "graded",
+                      "submitted": true,
+                      "submittedAt": "2026-09-11T22:14:00Z",
+                      "graded": true,
+                      "gradedAt": "2026-09-13T15:02:00Z",
+                      "attempt": 1,
+                      "score": 45,
+                      "grade": "45",
+                      "percentage": "90%",
+                      "pointsDeducted": null,
+                      "badges": [],
+                      "statistics": {
+                        "min": 50,
+                        "max": 100,
+                        "mean": 84
+                      }
+                    },
+                    {
+                      "id": "1003",
+                      "course": "101",
+                      "courseName": "AP Calculus BC",
+                      "courseCode": "MTH401",
+                      "name": "Homework 2.4",
+                      "category": "Homework",
+                      "url": "https://district.instructure.com/courses/101/assignments/1003",
+                      "dueAt": "2026-09-17T04:59:00Z",
+                      "dueDate": "9/16/2026",
+                      "dueTime": "11:59 PM",
+                      "daysUntilDue": -3,
+                      "pointsPossible": 10,
+                      "gradingType": "points",
+                      "submissionTypes": [
+                        "online_text_entry"
+                      ],
+                      "published": true,
+                      "omitFromFinalGrade": false,
+                      "status": "missing",
+                      "submitted": false,
+                      "submittedAt": null,
+                      "graded": false,
+                      "gradedAt": null,
+                      "attempt": null,
+                      "score": null,
+                      "grade": null,
+                      "percentage": null,
+                      "pointsDeducted": null,
+                      "badges": [
+                        "missing"
+                      ],
+                      "statistics": null
+                    }
+                  ],
+                  "session": {
+                    "cookies": {
+                      "version": "tough-cookie@5.0.0",
+                      "storeType": "MemoryCookieStore",
+                      "cookies": [
+                        {
+                          "key": "ASP.NET_SessionId",
+                          "value": "…",
+                          "domain": "homeaccess.example.org"
+                        }
+                      ]
+                    },
+                    "cache": {
+                      "lastValidationTime": 1789300000000,
+                      "link": "https://homeaccess.example.org/",
+                      "username": "s123456"
+                    },
+                    "loginMetadata": {
+                      "loginType": "credentials",
+                      "loginData": {
+                        "link": "https://homeaccess.example.org",
+                        "username": "s123456"
+                      }
+                    }
+                  }
+                }
+              },
+              "text/event-stream": {
+                "description": "When `stream: true`: newline-delimited progress objects separated by blank lines, followed by the final JSON body.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "{\"percent\":4,\"message\":\"Authenticating\"}\n\n{\"percent\":50,\"message\":\"Fetching classes\"}\n\n{\"success\":true,…}"
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error (bad `loginType`, missing params, unsafe link).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "success": false,
+                  "status": 400,
+                  "message": "loginType must be one of: credentials, classlink, classlinkCredentials"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid credentials or expired session that could not be renewed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "success": false,
+                  "status": 401,
+                  "message": "Invalid session or password"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found (e.g. no bell schedule) or class not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded (120 requests/minute per IP by default).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "success": false,
+                  "message": "Too many requests, please slow down."
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Portal changed or unexpected failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -6670,7 +8251,8 @@
           "credentials",
           "classlink",
           "classlinkCredentials",
-          "microsoftSession"
+          "microsoftSession",
+          "token"
         ],
         "description": "How to authenticate. Each platform accepts a subset — see the platform pages."
       },
@@ -6780,6 +8362,31 @@
           }
         }
       },
+      "TokenLoginData": {
+        "type": "object",
+        "title": "token",
+        "required": [
+          "link",
+          "token"
+        ],
+        "description": "API-token sign-in. The token is the whole credential — there is no handshake and no cookie — so it is sent on every request and round-trips inside the `session` envelope.",
+        "properties": {
+          "link": {
+            "type": "string",
+            "format": "uri",
+            "description": "Canvas instance URL, e.g. `https://district.instructure.com`. Any path is stripped."
+          },
+          "token": {
+            "type": "string",
+            "format": "password",
+            "description": "A Canvas user access token (Account → Settings → **+ New Access Token**)."
+          },
+          "username": {
+            "type": "string",
+            "description": "Optional display username."
+          }
+        }
+      },
       "Session": {
         "type": "object",
         "description": "Opaque session envelope returned by every authenticated route. Send it back unchanged as `session` to skip re-authentication. Sessions validated within the last 5 minutes are reused with no portal round-trip; older ones are probed and transparently re-logged-in.",
@@ -6848,6 +8455,9 @@
               },
               {
                 "$ref": "#/components/schemas/MicrosoftSessionLoginData"
+              },
+              {
+                "$ref": "#/components/schemas/TokenLoginData"
               }
             ]
           },
@@ -7051,6 +8661,22 @@
           "categories": {
             "type": "object",
             "additionalProperties": true
+          },
+          "averageType": {
+            "type": "string",
+            "description": "How the portal computes the average: `percentwise`, `scorewise` or `categorywise`."
+          },
+          "code": {
+            "type": "string",
+            "description": "**Canvas.** The course code (`MTH401`)."
+          },
+          "termName": {
+            "type": "string",
+            "description": "**Canvas.** The enrollment term the course belongs to (`Fall 2026`)."
+          },
+          "url": {
+            "type": "string",
+            "description": "**Canvas.** Link to the course."
           }
         }
       },
@@ -7079,14 +8705,14 @@
             "items": {
               "$ref": "#/components/schemas/TermNode"
             },
-            "description": "**PowerSchool / Skyward.** Terms grouped by letter family."
+            "description": "**PowerSchool / Skyward.** Terms grouped by letter family. **Canvas** returns a flat list (grading periods do not nest)."
           },
           "currentTerms": {
             "type": "array",
             "items": {
               "type": "string"
             },
-            "description": "**PowerSchool / Skyward.** All terms active today, coarsest first — the last entry is the finest."
+            "description": "**PowerSchool / Skyward / Canvas.** All terms active today, coarsest first — the last entry is the finest."
           }
         }
       },
@@ -7102,6 +8728,214 @@
           },
           "studentId": {
             "type": "string"
+          }
+        }
+      },
+      "Assignment": {
+        "type": "object",
+        "description": "**Canvas only.** One assignment from `/assignments`.",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "course": {
+            "type": "string",
+            "description": "Course id — matches `classes[].course`."
+          },
+          "courseName": {
+            "type": "string"
+          },
+          "courseCode": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string",
+            "description": "Canvas assignment group (the grade category)."
+          },
+          "url": {
+            "type": "string",
+            "description": "Link to the assignment in Canvas."
+          },
+          "description": {
+            "type": "string",
+            "description": "Canvas’s HTML body. Only present with `options.includeDescription`."
+          },
+          "dueAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Raw ISO instant, for sorting and relative times."
+          },
+          "dueDate": {
+            "type": "string",
+            "description": "`M/D/YYYY` in the user’s own Canvas time zone."
+          },
+          "dueTime": {
+            "type": "string",
+            "example": "11:59 PM"
+          },
+          "unlockAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "unlockDate": {
+            "type": "string"
+          },
+          "lockAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "lockDate": {
+            "type": "string"
+          },
+          "daysUntilDue": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Negative once the due date has passed."
+          },
+          "pointsPossible": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "gradingType": {
+            "type": "string",
+            "enum": [
+              "points",
+              "percent",
+              "letter_grade",
+              "gpa_scale",
+              "pass_fail",
+              "not_graded"
+            ]
+          },
+          "submissionTypes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "published": {
+            "type": "boolean"
+          },
+          "omitFromFinalGrade": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "graded",
+              "submitted",
+              "pending",
+              "late",
+              "missing",
+              "excused",
+              "overdue",
+              "upcoming",
+              "past",
+              "undated"
+            ],
+            "description": "Where the assignment stands, resolved in the order a student reads it: excused, then graded, then submitted, then the due date. Filter with `options.status`."
+          },
+          "submitted": {
+            "type": "boolean"
+          },
+          "submittedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "graded": {
+            "type": "boolean"
+          },
+          "gradedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "attempt": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "score": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "grade": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The score in the assignment’s own scheme (a letter, `complete`, or the number)."
+          },
+          "percentage": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pointsDeducted": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Taken off by the course’s late policy."
+          },
+          "badges": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "e.g. `missing`, `late`, `exempt`."
+          },
+          "statistics": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "Class-wide min/max/mean, when the teacher publishes them.",
+            "properties": {
+              "min": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "max": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "mean": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              }
+            }
           }
         }
       },
@@ -7225,6 +9059,34 @@
         "Term labels vary by district (PR1/1ST/SM1, T1–T4, Q1–Q4…). Fall/spring sections of the same course are merged.",
         "No SSO login types and no `/ipr`."
       ]
+    },
+    {
+      "id": "canvas",
+      "name": "Canvas",
+      "fullName": "Canvas LMS (Instructure)",
+      "mount": "/canvas",
+      "loginTypes": [
+        "token"
+      ],
+      "exampleLink": "https://district.instructure.com",
+      "helpers": [],
+      "operations": [
+        "info",
+        "classes",
+        "singleClass",
+        "teachers",
+        "assignments"
+      ],
+      "summary": "Instructure Canvas, via its documented REST API and a user access token. The only LMS here — no attendance, report cards or transcripts, but assignments are first-class objects with real due dates.",
+      "notes": [
+        "Sign in with `loginType: \"token\"`. The user generates the token in Canvas under **Account → Settings → + New Access Token**; there is no password and no SSO flow to complete.",
+        "`link` is the Canvas instance URL (`https://district.instructure.com`). Any path is discarded, so pasting the URL of whatever page the user was on works.",
+        "Terms are Canvas **grading periods** — flat and dated, so `termTree` has no nesting (`hasSubterms: false`). A synthetic `Total` column carries the whole-course grade when the account enables all-grading-period totals, or when there are no grading periods at all.",
+        "`/classes` returns averages only (`scoresIncluded: false`); fetch assignments per class with `/single-class`, or across every class at once with `/assignments`.",
+        "`/assignments` is Canvas-only: every assignment with due / unlock / lock timestamps, submission state, score and class statistics, filterable by term, course, status and due-date window.",
+        "No `/attendance`, `/reportCard`, `/transcript`, `/ipr`, `/schedule` or `/bellSchedule` — Canvas is a learning platform, not a student information system, so those routes return 404.",
+        "Teacher emails are not exposed by Canvas’s course payload, so `/teachers` returns `email: \"\"`."
+      ]
     }
   ],
   "x-operations": [
@@ -7238,7 +9100,8 @@
       "platforms": [
         "hac",
         "powerschool",
-        "skyward-legacy"
+        "skyward-legacy",
+        "canvas"
       ]
     },
     {
@@ -7273,7 +9136,8 @@
       "platforms": [
         "hac",
         "powerschool",
-        "skyward-legacy"
+        "skyward-legacy",
+        "canvas"
       ]
     },
     {
@@ -7286,7 +9150,8 @@
       "platforms": [
         "hac",
         "powerschool",
-        "skyward-legacy"
+        "skyward-legacy",
+        "canvas"
       ]
     },
     {
@@ -7299,7 +9164,8 @@
       "platforms": [
         "hac",
         "powerschool",
-        "skyward-legacy"
+        "skyward-legacy",
+        "canvas"
       ]
     },
     {
@@ -7350,7 +9216,8 @@
       "platforms": [
         "hac",
         "powerschool",
-        "skyward-legacy"
+        "skyward-legacy",
+        "canvas"
       ]
     },
     {
@@ -7387,6 +9254,17 @@
       "platforms": [
         "hac",
         "skyward-legacy"
+      ]
+    },
+    {
+      "key": "assignments",
+      "path": "/assignments",
+      "title": "Assignments",
+      "group": "Grades",
+      "summary": "Every assignment across every class, with dates (Canvas only).",
+      "description": "The LMS-only route. A gradebook portal only ever shows assignments underneath a class; Canvas has them as first-class objects with real due / unlock / lock timestamps, submission state and class statistics, so this returns one flat list across every course — enough to render “what’s due this week” without a `/single-class` call per class.\n\nScope it with `options.term` (a grading period), narrow it to one course with `options.course`, and filter with `options.status`, `options.dueAfter` / `options.dueBefore` and `options.limit`. Results are sorted by due date, soonest first, with undated work last; `counts` always reflects the full match even when `limit` truncates the list.\n\n`description` (Canvas’s HTML body) is omitted unless you ask for it — it is frequently enormous. If a course cannot be read (locked, or rate-limited), the rest still come back and the course is named in `unavailable`.",
+      "platforms": [
+        "canvas"
       ]
     }
   ]

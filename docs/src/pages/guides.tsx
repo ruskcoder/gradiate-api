@@ -84,7 +84,7 @@ export function OverviewPage() {
       <H2>Base URL & conventions</H2>
       <UL>
         <li>
-          Every platform lives under its own prefix: <C>/hac</C>, <C>/powerschool</C>, <C>/skyward-legacy</C>.
+          Every platform lives under its own prefix: <C>/hac</C>, <C>/powerschool</C>, <C>/skyward-legacy</C>, <C>/canvas</C>.
         </li>
         <li>
           All data routes are <C>POST</C> with a JSON body — credentials never go in the URL.
@@ -221,6 +221,7 @@ function Authentication() {
               ["classlink", "clsession"],
               ["classlinkCredentials", "username, password, code, clMFA?"],
               ["microsoftSession", "link, cookies"],
+              ["token", "link, token"],
             ].map(([t, d]) => (
               <TableRow key={t}>
                 <TableCell className="font-mono text-[13px]">{t}</TableCell>
@@ -284,6 +285,28 @@ function Authentication() {
         <Link to="/api/authMethods" className="font-medium text-foreground underline underline-offset-4">/powerschool/authMethods</Link> to see
         whether a district offers it, complete Microsoft sign-in in a browser or WebView at <C>ssoUrl</C>, then send the resulting portal cookies as{" "}
         <C>loginData.cookies</C> with <C>loginType: "microsoftSession"</C>.
+      </P>
+
+      <H2>API access token (Canvas)</H2>
+      <P>
+        Canvas has a documented REST API, so there is no login to reproduce: the user generates a token themselves in Canvas under{" "}
+        <strong>Account → Settings → + New Access Token</strong> and you send it as <C>loginData.token</C> alongside the instance URL. The token is
+        the whole credential — it rides in an <C>Authorization: Bearer</C> header on every request and round-trips inside the <C>session</C>{" "}
+        envelope, so follow-up calls can send <C>session</C> with no <C>loginData</C> at all.
+      </P>
+      <CodeBlock
+        lang="json"
+        code={`{
+  "loginType": "token",
+  "loginData": {
+    "link": "https://district.instructure.com",
+    "token": "1234~abcdef…"
+  }
+}`}
+      />
+      <P>
+        Any path on <C>link</C> is discarded, so pasting the URL of whatever Canvas page the user was on works. A revoked or mistyped token comes
+        back as a <C>401</C>.
       </P>
     </>
   )

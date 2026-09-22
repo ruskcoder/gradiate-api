@@ -90,6 +90,7 @@ export const LOGIN_TYPE_SCHEMA: Record<string, string> = {
   classlink: "ClassLinkLoginData",
   classlinkCredentials: "ClassLinkCredentialsLoginData",
   microsoftSession: "MicrosoftSessionLoginData",
+  token: "TokenLoginData",
 }
 
 export const LOGIN_TYPE_LABEL: Record<string, string> = {
@@ -97,6 +98,7 @@ export const LOGIN_TYPE_LABEL: Record<string, string> = {
   classlink: "ClassLink session",
   classlinkCredentials: "ClassLink login",
   microsoftSession: "Microsoft session",
+  token: "API access token",
 }
 
 export function loginDataSchema(loginType: string) {

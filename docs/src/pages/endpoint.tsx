@@ -30,16 +30,29 @@ const OP_NOTES: Record<string, Record<string, string>> = {
     hac: "For multi-district HAC hosts, first call `/hac/districts` and pass the chosen district as `loginData.district`. ClassLink logins may return `mfaRequired`.",
     powerschool: "Call `/powerschool/authMethods` first. For Microsoft districts use `microsoftSession` with the portal cookies captured after sign-in.",
     "skyward-legacy": "Credentials only. `link` is the district’s full `…/WService=…/` Family Access URL.",
+    canvas:
+      "Token only — no password. The user creates one in Canvas under **Account → Settings → + New Access Token**, and `link` is the instance URL (any path you paste is stripped).",
   },
   classes: {
     hac: "Assignments are included (`scoresIncluded: true`). Terms are plain run numbers; no `termTree` or `currentTerms`.",
     powerschool: "Averages only — fetch assignments with `/single-class`. Each class has `averages` for every term, and `studentId` switches child on parent accounts.",
     "skyward-legacy": "Averages only — fetch assignments with `/single-class`. Fall/spring sections of one course are merged into a single class.",
+    canvas:
+      "Averages only. Terms are Canvas grading periods — flat, so `termTree` has no nesting — plus a `Total` column for the whole-course grade. `period` and `room` are always empty: an LMS has no master schedule.",
   },
   singleClass: {
     hac: "`options.class` (name) is required. HAC has no `course` filter.",
     powerschool: "Prefer `options.course`. `scoresIncluded` is false if the portal’s assignment lookup fails; averages are still returned.",
     "skyward-legacy": "Prefer `options.course`. `options.term` accepts a term or subterm label.",
+    canvas:
+      "Prefer `options.course` (the Canvas course id). `categories` are Canvas assignment groups; `averageType` is `categorywise` when the course weights those groups and `percentwise` when it grades on total points.",
+  },
+  teachers: {
+    canvas: "Canvas’s course payload carries no teacher emails, so `email` is always empty. The `teachers[]` array adds each teacher’s id and avatar.",
+  },
+  assignments: {
+    canvas:
+      "Canvas-only. Sorted by due date with undated work last; `counts` tallies the full match even when `options.limit` truncates the list. `late`, `missing` and `excused` in `options.status` also match the corresponding `badges`, so graded-but-late work still appears.",
   },
   attendance: {
     hac: "Pass `options.date` as `Month-YYYY` to page through months.",
