@@ -15,7 +15,7 @@
 
 import { AuthenticationError, ValidationError, APIError } from '../../core/errors.js';
 import { createSessionValidator, streamOrThrow, defaultFormatLink } from '../../core/platform.js';
-import { ERROR_MESSAGES, SKYWARD_ENDPOINTS } from '../config/constants.js';
+import { ERROR_MESSAGES, SKYWARD_ENDPOINTS, DEFAULT_PORTAL_PATH } from '../config/constants.js';
 
 // Detect a logged-out Skyward response so the reauth wrapper can transparently
 // re-login. Three shapes count as expired:
@@ -41,7 +41,7 @@ function isSessionExpired(html) {
   // The explicit logged-out landing page (qloggedout001.w).
   if (/qloggedout\d*\.w|You have been logged out/i.test(html)) return true;
   const looksLikeLogin =
-    /WService=wsEAplus\/seplog01\.w|nameid=["']?login["']?|name=["']?password["']?|Login\s*Area|sfLoginForm/i.test(html);
+    /(?:WService=wsEAplus|Student\/web)\/seplog01\.w|nameid=["']?login["']?|name=["']?password["']?|Login\s*Area|sfLoginForm/i.test(html);
   return looksLikeLogin;
 }
 
@@ -71,6 +71,56 @@ const checkSessionValidity = createSessionValidator(
 /** Read the Skyward token bundle a data function needs off the session. */
 function skywardTokens(session) {
   return (session.cache && session.cache.skyward) || {};
+}
+
+// A portal path is a relative directory ("Student/web/"). It round-trips
+// through the client's session cache, so only plain path segments are accepted
+// — never a scheme, host, `..` or leading slash that could point requests
+// somewhere other than `link`.
+const SAFE_PORTAL_PATH = /^(?:[A-Za-z0-9_.=-]+\/)+$/;
+
+function isSafePortalPath(path) {
+  return typeof path === 'string' && SAFE_PORTAL_PATH.test(path) && !path.split('/').includes('..');
+}
+
+/**
+ * Absolute URL of a Skyward page (`name` is a SKYWARD_ENDPOINTS key) under the
+ * portal directory detected at login, falling back to the legacy ISAPI path.
+ */
+function portalUrl(session, link, name) {
+  const cached = skywardTokens(session).portalPath;
+  const path = isSafePortalPath(cached) ? cached : DEFAULT_PORTAL_PATH;
+  return link + path + SKYWARD_ENDPOINTS[name];
+}
+
+/**
+ * Lazy form of portalUrl for requests through the reauth wrapper: a session
+ * cached before detection existed first hits the fallback path, bounces to a
+ * login page and re-logs-in — the retry must then use the freshly detected
+ * directory, not the stale URL.
+ */
+function lazyPortalUrl(session, link, name) {
+  return () => portalUrl(session, link, name);
+}
+
+/**
+ * Work out the portal directory from where the login page GET landed after
+ * redirects (e.g. .../Student/web/seplog01.w → "Student/web/").
+ */
+function detectPortalPath(res, link) {
+  try {
+    const landed = res?.request?.res?.responseUrl || res?.request?.responseURL;
+    if (!landed) return null;
+    const base = new URL(link);
+    const url = new URL(landed);
+    if (url.host !== base.host) return null;
+    const dir = url.pathname.slice(0, url.pathname.lastIndexOf('/') + 1);
+    if (!dir.startsWith(base.pathname)) return null;
+    const path = dir.slice(base.pathname.length);
+    return isSafePortalPath(path) ? path : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Build the `recid\x15wfaacl_recid` session id string Skyward expects. */
@@ -110,8 +160,11 @@ async function credentialsAuth(session, loginData, progressTracker) {
   }
 
   try {
-    // 1. Seed the session.
-    await session.get(link + SKYWARD_ENDPOINTS.LOGIN).catch(() => {});
+    // 1. Seed the session, and learn which directory the portal lives in from
+    //    where the login page redirects to. The login POST can't discover this
+    //    itself: a 301 turns it into a GET and the token blob never comes back.
+    const seed = await session.get(link + DEFAULT_PORTAL_PATH + SKYWARD_ENDPOINTS.LOGIN).catch(() => null);
+    const portalPath = detectPortalPath(seed, link) || DEFAULT_PORTAL_PATH;
 
     // 2. Login handshake.
     const payload = new URLSearchParams({
@@ -121,7 +174,7 @@ async function credentialsAuth(session, loginData, progressTracker) {
       password,
     }).toString();
 
-    const res = await session.post(link + SKYWARD_ENDPOINTS.LOGIN_POST, payload, {
+    const res = await session.post(link + portalPath + SKYWARD_ENDPOINTS.LOGIN_POST, payload, {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
     });
 
@@ -142,7 +195,7 @@ async function credentialsAuth(session, loginData, progressTracker) {
     }
 
     session.cache = session.cache || {};
-    session.cache.skyward = tokens;
+    session.cache.skyward = { ...tokens, portalPath };
     session.setLastValidationTime(Date.now());
     return { session, username, link };
   } catch (error) {
@@ -164,4 +217,6 @@ export {
   skywardTokens,
   sessionId,
   tokenBody,
+  portalUrl,
+  lazyPortalUrl,
 };

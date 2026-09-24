@@ -8,8 +8,7 @@
  */
 
 import * as cheerio from 'cheerio';
-import { SKYWARD_ENDPOINTS } from '../config/constants.js';
-import { checkSessionValidity, tokenBody } from '../auth/credentials.js';
+import { checkSessionValidity, tokenBody, portalUrl, lazyPortalUrl } from '../auth/credentials.js';
 
 // Academic history is delivered as Skyward grid JSON: each row is
 // { h:"<tr...>", c:[{h:"<td...>...</td>"}, ...] } (the row's own `h` is only the
@@ -130,10 +129,10 @@ function parseReportCard(rawHtml) {
 }
 
 async function reportCard(session, link, options, progressTracker) {
-  const res = await session.post(link + SKYWARD_ENDPOINTS.ACADEMIC_HISTORY, tokenBody(session), {
+  const res = await session.post(lazyPortalUrl(session, link, 'ACADEMIC_HISTORY'), tokenBody(session), {
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-      Referer: link + SKYWARD_ENDPOINTS.HOME,
+      Referer: portalUrl(session, link, 'HOME'),
     },
   });
   checkSessionValidity(res);
@@ -143,10 +142,10 @@ async function reportCard(session, link, options, progressTracker) {
 }
 
 async function transcript(session, link, options, progressTracker) {
-  const res = await session.post(link + SKYWARD_ENDPOINTS.ACADEMIC_HISTORY, tokenBody(session), {
+  const res = await session.post(lazyPortalUrl(session, link, 'ACADEMIC_HISTORY'), tokenBody(session), {
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-      Referer: link + SKYWARD_ENDPOINTS.HOME,
+      Referer: portalUrl(session, link, 'HOME'),
     },
   });
   checkSessionValidity(res);

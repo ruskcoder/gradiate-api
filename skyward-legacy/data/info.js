@@ -3,15 +3,14 @@
  * parseStudentInfoHtml is ported from the reverse-engineering WIP.
  */
 
-import { SKYWARD_ENDPOINTS } from '../config/constants.js';
-import { checkSessionValidity, tokenBody } from '../auth/credentials.js';
+import { checkSessionValidity, tokenBody, lazyPortalUrl } from '../auth/credentials.js';
 
 function escapeRegExp(str) {
   return String(str).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 async function info(session, link, options, progressTracker) {
-  const res = await session.post(link + SKYWARD_ENDPOINTS.INFO, tokenBody(session), {
+  const res = await session.post(lazyPortalUrl(session, link, 'INFO'), tokenBody(session), {
     headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
   });
   checkSessionValidity(res);

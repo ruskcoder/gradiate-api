@@ -8,17 +8,17 @@
  */
 
 import * as cheerio from 'cheerio';
-import { SKYWARD_ENDPOINTS, ERROR_MESSAGES } from '../config/constants.js';
-import { checkSessionValidity, tokenBody } from '../auth/credentials.js';
+import { ERROR_MESSAGES } from '../config/constants.js';
+import { checkSessionValidity, tokenBody, portalUrl, lazyPortalUrl } from '../auth/credentials.js';
 import { APIError, HTTP_STATUS } from '../../core/errors.js';
 
 const TIME_RE = /\b(\d{1,2}:\d{2}\s*[AaPp][Mm])\s*[-–]\s*(\d{1,2}:\d{2}\s*[AaPp][Mm])\b/;
 
 async function bellSchedule(session, link, options, progressTracker) {
-  const res = await session.post(link + SKYWARD_ENDPOINTS.SCHEDULE, tokenBody(session), {
+  const res = await session.post(lazyPortalUrl(session, link, 'SCHEDULE'), tokenBody(session), {
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-      Referer: link + SKYWARD_ENDPOINTS.HOME,
+      Referer: portalUrl(session, link, 'HOME'),
     },
   });
   checkSessionValidity(res);

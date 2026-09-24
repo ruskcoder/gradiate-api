@@ -37,6 +37,11 @@ function createReauthSession(baseSession, link, { isSessionExpired, relogin }) {
   // as-is.
   const resolveData = (data) => (typeof data === 'function' ? data() : data);
 
+  // `url` may be a thunk for the same reason: a relogin can learn where the
+  // portal actually lives (Skyward's detected portal directory), so the retry
+  // re-resolves it instead of replaying the pre-login URL.
+  const resolveUrl = (url) => (typeof url === 'function' ? url() : url);
+
   // Some portals answer an expired session with a status code rather than a
   // logged-out HTML page. axios throws on those, so they never reach the body
   // check and would surface as a hard error instead of a silent re-login.
@@ -70,9 +75,9 @@ function createReauthSession(baseSession, link, { isSessionExpired, relogin }) {
     const send = () => {
       if (method === 'post') {
         const [data, config] = rest;
-        return state.baseSession.post(url, resolveData(data), config);
+        return state.baseSession.post(resolveUrl(url), resolveData(data), config);
       }
-      return state.baseSession.get(url, rest[0]);
+      return state.baseSession.get(resolveUrl(url), rest[0]);
     };
 
     const seen = state.generation;

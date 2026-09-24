@@ -7,8 +7,7 @@
  */
 
 import * as cheerio from 'cheerio';
-import { SKYWARD_ENDPOINTS } from '../config/constants.js';
-import { checkSessionValidity, tokenBody } from '../auth/credentials.js';
+import { checkSessionValidity, tokenBody, portalUrl, lazyPortalUrl } from '../auth/credentials.js';
 
 const MONTH_REGEX = /\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4}\b/i;
 
@@ -95,10 +94,10 @@ function parseCalendar($) {
 }
 
 async function attendance(session, link, options, progressTracker) {
-  const res = await session.post(link + SKYWARD_ENDPOINTS.ATTENDANCE, tokenBody(session), {
+  const res = await session.post(lazyPortalUrl(session, link, 'ATTENDANCE'), tokenBody(session), {
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-      Referer: link + SKYWARD_ENDPOINTS.HOME,
+      Referer: portalUrl(session, link, 'HOME'),
     },
   });
   checkSessionValidity(res);

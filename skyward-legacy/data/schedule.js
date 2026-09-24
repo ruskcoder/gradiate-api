@@ -5,8 +5,7 @@
  */
 
 import * as cheerio from 'cheerio';
-import { SKYWARD_ENDPOINTS } from '../config/constants.js';
-import { checkSessionValidity, tokenBody } from '../auth/credentials.js';
+import { checkSessionValidity, tokenBody, portalUrl, lazyPortalUrl } from '../auth/credentials.js';
 
 function parseSchedule($) {
   let building = '';
@@ -69,10 +68,10 @@ function parseSchedule($) {
 }
 
 async function schedule(session, link, options, progressTracker) {
-  const res = await session.post(link + SKYWARD_ENDPOINTS.SCHEDULE, tokenBody(session), {
+  const res = await session.post(lazyPortalUrl(session, link, 'SCHEDULE'), tokenBody(session), {
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-      Referer: link + SKYWARD_ENDPOINTS.HOME,
+      Referer: portalUrl(session, link, 'HOME'),
     },
   });
   checkSessionValidity(res);

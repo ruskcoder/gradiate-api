@@ -12,8 +12,7 @@
  */
 
 import * as cheerio from 'cheerio';
-import { SKYWARD_ENDPOINTS } from '../config/constants.js';
-import { skywardTokens, sessionId, checkSessionValidity, tokenBody } from '../auth/credentials.js';
+import { skywardTokens, sessionId, checkSessionValidity, tokenBody, lazyPortalUrl } from '../auth/credentials.js';
 import { nestByFrequency, groupByFamily, forestHasChildren, pathToLabel } from '../../core/termTree.js';
 
 // ---------------------------------------------------------------------------
@@ -21,7 +20,7 @@ import { nestByFrequency, groupByFamily, forestHasChildren, pathToLabel } from '
 // ---------------------------------------------------------------------------
 async function fetchGradebookHtml(session, link, progressTracker) {
   progressTracker?.update?.(55, 'Fetching gradebook');
-  const url = link + SKYWARD_ENDPOINTS.GRADEBOOK;
+  const url = lazyPortalUrl(session, link, 'GRADEBOOK');
   const looksLikeGrid = (t) => /stuGradesGrid_\d+_|showGradeInfo/.test(t || '');
 
   let res = null;
@@ -319,7 +318,7 @@ async function fetchClassDetail(session, link, courseId, termHint, progressTrack
     }).toString();
   };
 
-  const res = await session.post(link + SKYWARD_ENDPOINTS.CLASS_DETAILS,
+  const res = await session.post(lazyPortalUrl(session, link, 'CLASS_DETAILS'),
     makeBody,
     { headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' } });
 
