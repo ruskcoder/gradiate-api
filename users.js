@@ -1,6 +1,6 @@
 /**
  * User bookkeeping: one row per student in `users`, recording when we first saw
- * them sign in, plus a per-school tally in `school_counts`.
+ * them sign in. Per-school totals are computed live by `school_stats()`.
  */
 
 import supabase from './database.js';
@@ -56,7 +56,7 @@ async function recordLogin(username, school, name) {
 
   if (error) throw error;
 
-  // `school_counts` is kept in sync by a database trigger on `users`.
+  // Per-school totals are computed live from `users` by the `school_stats()` function.
   return { firstLoggedIn: inserted.firstLoggedIn };
 }
 

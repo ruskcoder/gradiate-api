@@ -158,12 +158,14 @@ const STATS_TTL_MS = 30 * 1000;
 let statsCache = { at: 0, body: null, pending: null };
 
 async function loadStats() {
-  const { data, error } = await supabase.from('school_counts').select('school,count');
+  // `school_stats()` groups `users` in the database (see sql/school_stats.sql),
+  // so the counts are always live and only ~one row per school comes back.
+  const { data, error } = await supabase.rpc('school_stats');
   if (error) throw error;
   const schools = data
     .filter((row) => row.count > 0)
     .sort((a, b) => b.count - a.count)
-    .map((row) => [row.school, row.count]);
+    .map((row) => [row.school, Number(row.count)]);
   const total = schools.reduce((sum, [, count]) => sum + count, 0);
   return { total, schools };
 }
