@@ -4,7 +4,7 @@
  * schedule so the apps render it the same way.
  */
 
-import * as cheerio from 'cheerio';
+import * as cheerio from '../../core/html.js';
 import { checkSessionValidity, tokenBody, portalUrl, lazyPortalUrl } from '../auth/credentials.js';
 
 function parseSchedule($) {

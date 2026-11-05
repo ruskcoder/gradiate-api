@@ -2,20 +2,20 @@
  * Debug request logging.
  *
  * Every platform reaches a school portal through a core session (see session.js),
- * so hanging axios interceptors off that one place gives a complete, ordered trace
- * of what the API asks the portal for — including the redirects axios follows
- * silently, which is usually where a login flow actually goes wrong.
+ * so logging from that one place gives a complete, ordered trace of what the API
+ * asks the portal for — including every redirect hop, which is usually where a
+ * login flow actually goes wrong.
  *
  * Off unless `DEBUG_REQUESTS` is truthy, because the trace includes portal URLs
  * and form field names. Values that could carry a credential are redacted here
  * rather than at the call site, so a new platform can't leak a password into the
  * logs just by forgetting to.
  *
- *   DEBUG_REQUESTS=1 node index.js     # trace every outbound portal request
- *   NO_COLOR=1                         # plain text (CI, file redirection)
+ *   DEBUG_REQUESTS=1 in .dev.vars      # trace every outbound portal request
+ *   NO_COLOR=1                         # plain text (CI, Workers logs)
  */
 
-import process from 'process';
+import { env } from './env.js';
 
 const ANSI = {
   reset: '\x1b[0m',
@@ -30,7 +30,7 @@ const ANSI = {
   gray: '\x1b[90m',
 };
 
-const useColor = () => !process.env.NO_COLOR;
+const useColor = () => !env.NO_COLOR;
 
 function paint(text, ...codes) {
   if (!useColor()) return String(text);
@@ -58,7 +58,7 @@ function statusColor(status) {
 }
 
 function isDebugEnabled() {
-  const flag = process.env.DEBUG_REQUESTS;
+  const flag = env.DEBUG_REQUESTS;
   return Boolean(flag) && flag !== '0' && flag.toLowerCase() !== 'false';
 }
 
@@ -132,65 +132,34 @@ function shortUrl(url) {
 let seq = 0;
 
 /**
- * Attach request/response logging to an axios instance. Safe to call on every
- * session; it no-ops unless DEBUG_REQUESTS is set. `label` tags the trace so
- * concurrent requests from different callers stay distinguishable.
+ * Log one outbound request hop. Returns a handle for `debugResponse`, or null
+ * when tracing is off (the caller then skips all formatting work).
  */
-function attachDebugLogger(axiosInstance, label = 'session') {
-  if (!isDebugEnabled() || !axiosInstance?.interceptors) return axiosInstance;
-
-  axiosInstance.interceptors.request.use((config) => {
-    const id = ++seq;
-    config.__debugId = id;
-    config.__debugStart = Date.now();
-
-    const method = (config.method || 'get').toUpperCase();
-    const url = shortUrl(axiosInstance.getUri ? axiosInstance.getUri(config) : config.url);
-
-    console.log(
-      `${paint(`[${label}#${id}]`, 'gray')} ${paint(` ${method} `, METHOD_COLORS[method] || 'blue', 'bold')} ${paint(url, 'bold')}`
-    );
-
-    const body = formatBody(config.data);
-    if (body) console.log(`${paint('        body ', 'gray')}${paint(body, 'dim')}`);
-
-    return config;
-  });
-
-  axiosInstance.interceptors.response.use(
-    (response) => {
-      const { __debugId: id, __debugStart: start } = response.config || {};
-      const ms = start ? Date.now() - start : 0;
-      const status = response.status;
-      const size = typeof response.data === 'string' ? response.data.length : 0;
-
-      // axios follows redirects transparently; responseUrl is where the chain
-      // actually landed. A login that "succeeded" but ended back on the LogOn
-      // page shows up right here.
-      const landed = response.request?.res?.responseUrl;
-      const requested = shortUrl(response.config?.url);
-      const redirected = landed && shortUrl(landed) !== requested;
-
-      console.log(
-        `${paint(`[${label}#${id}]`, 'gray')} ${paint(` ${status} `, statusColor(status), 'bold')} ` +
-        `${paint(`${ms}ms`, 'gray')} ${paint(size ? `${size}b` : '', 'gray')}` +
-        (redirected ? ` ${paint('→', 'yellow')} ${paint(shortUrl(landed), 'yellow')}` : '')
-      );
-      return response;
-    },
-    (error) => {
-      const { __debugId: id, __debugStart: start } = error.config || {};
-      const ms = start ? Date.now() - start : 0;
-      const status = error.response?.status;
-      console.log(
-        `${paint(`[${label}#${id}]`, 'gray')} ${paint(` ${status || 'ERR'} `, 'red', 'bold')} ` +
-        `${paint(`${ms}ms`, 'gray')} ${paint(error.message, 'red')}`
-      );
-      return Promise.reject(error);
-    }
+function debugRequest(label, method, url, body) {
+  if (!isDebugEnabled()) return null;
+  const id = ++seq;
+  console.log(
+    `${paint(`[${label}#${id}]`, 'gray')} ${paint(` ${method} `, METHOD_COLORS[method] || 'blue', 'bold')} ${paint(shortUrl(url), 'bold')}`
   );
+  const formatted = formatBody(body);
+  if (formatted) console.log(`${paint('        body ', 'gray')}${paint(formatted, 'dim')}`);
+  return { id, label, start: Date.now() };
+}
 
-  return axiosInstance;
+/** Log the outcome of a hop started with `debugRequest`. */
+function debugResponse(handle, status, size, redirectTo, error) {
+  if (!handle) return;
+  const ms = Date.now() - handle.start;
+  const tag = paint(`[${handle.label}#${handle.id}]`, 'gray');
+  if (error) {
+    console.log(`${tag} ${paint(' ERR ', 'red', 'bold')} ${paint(`${ms}ms`, 'gray')} ${paint(error.message, 'red')}`);
+    return;
+  }
+  console.log(
+    `${tag} ${paint(` ${status} `, statusColor(status), 'bold')} ` +
+    `${paint(`${ms}ms`, 'gray')} ${paint(size ? `${size}b` : '', 'gray')}` +
+    (redirectTo ? ` ${paint('→', 'yellow')} ${paint(shortUrl(redirectTo), 'yellow')}` : '')
+  );
 }
 
 /**
@@ -206,4 +175,4 @@ function debugLog(scope, message, detail) {
   );
 }
 
-export { attachDebugLogger, debugLog, isDebugEnabled };
+export { debugRequest, debugResponse, debugLog, isDebugEnabled };

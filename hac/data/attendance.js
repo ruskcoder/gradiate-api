@@ -5,7 +5,7 @@
  * so month navigation within one request doesn't re-fetch.
  */
 
-import * as cheerio from 'cheerio';
+import * as cheerio from '../../core/html.js';
 import { HAC_ENDPOINTS, ERROR_MESSAGES, MONTH_INPUTS } from '../config/constants.js';
 import { checkSessionValidity } from '../auth/credentials.js';
 import { ValidationError } from '../../core/errors.js';

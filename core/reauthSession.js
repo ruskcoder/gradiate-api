@@ -43,7 +43,7 @@ function createReauthSession(baseSession, link, { isSessionExpired, relogin }) {
   const resolveUrl = (url) => (typeof url === 'function' ? url() : url);
 
   // Some portals answer an expired session with a status code rather than a
-  // logged-out HTML page. axios throws on those, so they never reach the body
+  // logged-out HTML page. The session client throws on those, so they never reach the body
   // check and would surface as a hard error instead of a silent re-login.
   const AUTH_ERROR_STATUSES = new Set([401, 403]);
 
