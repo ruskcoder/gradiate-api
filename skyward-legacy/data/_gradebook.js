@@ -11,7 +11,7 @@
  * the fetch + top-level gradebook parse below were rewritten to be dynamic.
  */
 
-import * as cheerio from 'cheerio';
+import * as cheerio from '../../core/html.js';
 import { skywardTokens, sessionId, checkSessionValidity, tokenBody, lazyPortalUrl } from '../auth/credentials.js';
 import { nestByFrequency, groupByFamily, forestHasChildren, pathToLabel } from '../../core/termTree.js';
 

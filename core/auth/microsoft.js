@@ -22,7 +22,7 @@
  * portal base and username/password are the Microsoft account credentials.
  */
 
-import { CookieJar } from 'tough-cookie';
+import { CookieJar } from '../cookies.js';
 import { AuthenticationError } from '../errors.js';
 import { defaultFormatLink } from '../platform.js';
 
@@ -51,7 +51,7 @@ function extractConfig(html) {
   try { return JSON.parse(html.slice(start, end + 1)); } catch { return null; }
 }
 
-/** Final URL of an axios response after any redirects (Node http adapter). */
+/** Final URL of a session response after any redirects. */
 function finalUrl(res) {
   return res?.request?.res?.responseUrl || res?.request?.responseURL || '';
 }
@@ -67,7 +67,7 @@ const AAD_ORIGIN = 'https://login.microsoftonline.com';
 /**
  * Resolve a possibly-relative AAD form url. `$Config.urlPost` is served relative
  * (e.g. "/<tenant>/login"), so it must be joined against the page it came from
- * (or the AAD origin) before axios can POST to it.
+ * (or the AAD origin) before it can be POSTed to.
  */
 function resolveAadUrl(u, base) {
   if (!u) return u;

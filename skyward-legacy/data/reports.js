@@ -7,7 +7,7 @@
  * for reportCard / ipr.
  */
 
-import * as cheerio from 'cheerio';
+import * as cheerio from '../../core/html.js';
 import { checkSessionValidity, tokenBody, portalUrl, lazyPortalUrl } from '../auth/credentials.js';
 
 // Academic history is delivered as Skyward grid JSON: each row is

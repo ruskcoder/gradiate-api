@@ -14,7 +14,7 @@
  * `percent`; the column-driven UI shows whichever keys are present.
  */
 
-import * as cheerio from 'cheerio';
+import * as cheerio from '../../core/html.js';
 import { ENDPOINTS } from '../config/constants.js';
 import { checkSessionValidity } from '../auth/credentials.js';
 import { fetchHome, parseStudents, selectedStudentId } from './_grid.js';

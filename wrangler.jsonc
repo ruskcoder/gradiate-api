@@ -1,0 +1,63 @@
+// Cloudflare Worker for the Gradiate API. See README.md → "Deploying to Cloudflare".
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "gradiate-api",
+  "main": "index.js",
+  "compatibility_date": "2026-09-01",
+
+  // The API docs (docs/dist) and /static are served as static assets: free,
+  // unlimited, and they never run the Worker. Only API routes and the docs'
+  // client-side routes reach index.js.
+  "assets": {
+    "directory": "./docs/dist",
+    "binding": "ASSETS",
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "none"
+  },
+
+  // Hourly "go fetch" push broadcast (replaces the Node server's setInterval).
+  "triggers": {
+    "crons": ["0 * * * *"]
+  },
+
+  // Per-IP limits, approximate and counted per Cloudflare location. If your
+  // plan rejects this block on deploy, delete it: the code allows every
+  // request when the bindings are missing.
+  "ratelimits": [
+    { "name": "RATE_LIMITER", "namespace_id": "1001", "simple": { "limit": 120, "period": 60 } },
+    { "name": "STRICT_RATE_LIMITER", "namespace_id": "1002", "simple": { "limit": 20, "period": 60 } }
+  ],
+
+  "vars": {
+    // Max outbound calls one push broadcast may make. The Free plan allows 50
+    // per invocation; on the Paid plan raise this (it allows 10,000).
+    "PUSH_SUBREQUEST_BUDGET": "45",
+    // "on" (default), "off", or "verify" (runs the fast HAC reader and cheerio
+    // side by side and logs any difference). See hac/data/classes.js.
+    "HAC_FAST_PATH": "on"
+  },
+
+  // Secrets (set with `npx wrangler secret put NAME`, or in .dev.vars locally):
+  //   SUPABASE_URL, SUPABASE_KEY, VAPID_PRIVATE_KEY, FIREBASE_PUBLIC_KEY,
+  //   FIREBASE_PRIVATE_KEY, PUSH_TRIGGER_SECRET, TESTUSER, TESTPSSWD, USERNAME,
+  //   PASSWORD, MYNAME, BLOCKED_USERS (optional), DEBUG_REQUESTS (optional)
+
+  "observability": { "enabled": true },
+
+  // Same port the Node server used, so the web/mobile/splash local configs keep working.
+  "dev": { "port": 3000 },
+
+  // Point the API's domains at this Worker once the workers.dev deployment
+  // checks out. Cloudflare replaces the DNS records that point at Vercel.
+  // "routes": [
+  //   { "pattern": "api.gradiate.app", "custom_domain": true },
+  //   { "pattern": "api.gradexis.app", "custom_domain": true }
+  // ],
+
+  // Paid plan only: allow more CPU per request than the 30 s default.
+  // "limits": { "cpu_ms": 30000 },
+
+  // Smaller script → less to parse when a new isolate starts.
+  "minify": true,
+  "upload_source_maps": true
+}

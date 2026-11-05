@@ -4,8 +4,8 @@
  * table) is done by core's /info route for every platform.
  */
 
-import process from 'process';
-import * as cheerio from 'cheerio';
+import * as cheerio from '../../core/html.js';
+import { env } from '../../core/env.js';
 import { HAC_ENDPOINTS } from '../config/constants.js';
 import { checkSessionValidity } from '../auth/credentials.js';
 
@@ -37,7 +37,7 @@ async function info(session, link) {
       cohortYear: $('span#plnMain_lblCohortYear').text().trim(),
       district,
     };
-    if (studentInfo.name === process.env.MYNAME) {
+    if (studentInfo.name === env.MYNAME) {
       studentInfo.name = 'Test User';
     }
   }

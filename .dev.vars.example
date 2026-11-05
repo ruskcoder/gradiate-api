@@ -1,0 +1,15 @@
+# Copy to .dev.vars for `npm run dev` (wrangler dev). Never commit .dev.vars.
+# In production, set each of these with: npx wrangler secret put NAME
+SUPABASE_URL=
+SUPABASE_KEY=
+VAPID_PRIVATE_KEY=
+FIREBASE_PUBLIC_KEY=
+FIREBASE_PRIVATE_KEY=
+PUSH_TRIGGER_SECRET=
+TESTUSER=
+TESTPSSWD=
+USERNAME=
+PASSWORD=
+MYNAME=
+BLOCKED_USERS=
+DEBUG_REQUESTS=

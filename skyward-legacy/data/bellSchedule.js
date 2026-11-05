@@ -7,7 +7,7 @@
  * we return the standard 404 the apps already handle for portals without it.
  */
 
-import * as cheerio from 'cheerio';
+import * as cheerio from '../../core/html.js';
 import { ERROR_MESSAGES } from '../config/constants.js';
 import { checkSessionValidity, tokenBody, portalUrl, lazyPortalUrl } from '../auth/credentials.js';
 import { APIError, HTTP_STATUS } from '../../core/errors.js';

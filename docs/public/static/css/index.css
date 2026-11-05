@@ -1,0 +1,137 @@
+:root {
+    --accent: rgb(132, 185, 245);
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: 'Lexend', sans-serif;
+}
+
+body {
+    font-family: 'Lexend', sans-serif;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background-color: rgba(132, 185, 245, 0.2);
+}
+
+.container {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    max-width: 1000px;
+    width: 100%;
+    gap: 60px;
+}
+
+.left-section {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 20px;
+    flex: 1;
+}
+
+.logo {
+    width: 200px;
+    height: 200px;
+}
+
+.title {
+    font-size: 48px;
+    font-weight: 700;
+    color: #000;
+    text-align: center;
+}
+
+.right-section {
+    display: flex;
+    flex-direction: column;
+    gap: 40px;
+    flex: 1;
+}
+
+.tagline {
+    font-size: 48px;
+    color: #000;
+    line-height: 1.4;
+}
+
+.tagline .underline {
+    text-decoration: underline;
+    text-decoration-color: var(--accent);
+    text-decoration-thickness: 3px;
+    text-underline-offset: 4px;
+}
+
+button {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    border: 3px solid var(--accent);
+    background-color: transparent;
+    color: black;
+    padding: 0.75rem 2rem;
+    border-radius: 1rem;
+    font-size: 1.125rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    width: fit-content;
+}
+
+button:hover {
+    background-color: var(--accent);
+}
+
+@media (max-width: 768px) {
+    .container {
+        flex-direction: column;
+        gap: 40px;
+    }
+
+    .logo {
+        width: 150px;
+        height: 150px;
+    }
+
+    .title {
+        font-size: 36px;
+    }
+
+    .tagline {
+        font-size: 24px;
+    }
+
+    .right-section {
+        text-align: center;
+        align-items: center;
+    }
+
+    .docs-button {
+        align-self: center;
+    }
+}
+
+@media (max-width: 480px) {
+    .container {
+        gap: 30px;
+    }
+
+    .logo {
+        width: 120px;
+        height: 120px;
+    }
+
+    .title {
+        font-size: 28px;
+    }
+
+    .tagline {
+        font-size: 20px;
+    }
+}

@@ -13,8 +13,8 @@
  * the clients can't tell the difference.
  */
 
-import process from 'process';
-import supabase from '../database.js';
+import { env } from './env.js';
+import { db } from '../database.js';
 import { debugLog } from './debug.js';
 
 const OVERRIDE_TABLE = 'test_grade_overrides';
@@ -23,15 +23,13 @@ const OVERRIDE_TABLE = 'test_grade_overrides';
  * True only for the configured test account(s). Comparison is case-insensitive
  * because portals echo usernames back with inconsistent casing.
  *
- * NOTE: `USERNAME` is also a built-in Windows environment variable (the OS
- * account name), and dotenv does not overwrite variables that already exist. On
- * a Windows dev box `process.env.USERNAME` is therefore the OS user, not the
- * value in .env — set TESTUSER there instead.
+ * Both come from the Worker's secrets (`.dev.vars` locally), so the Windows
+ * built-in USERNAME environment variable no longer leaks in.
  */
 function isTestUser(username) {
   if (!username) return false;
   const candidate = String(username).trim().toLowerCase();
-  const allowed = [process.env.TESTUSER, process.env.USERNAME]
+  const allowed = [env.TESTUSER, env.USERNAME]
     .filter(Boolean)
     .map((value) => String(value).trim().toLowerCase());
   return allowed.includes(candidate);
@@ -43,11 +41,7 @@ function isTestUser(username) {
  * the effect, and it's only ever queried for the test account.
  */
 async function fetchGradeOverrides() {
-  const { data, error } = await supabase
-    .from(OVERRIDE_TABLE)
-    .select('courseName, avgOverride');
-
-  if (error) throw error;
+  const data = await db.select(`${OVERRIDE_TABLE}?select=courseName,avgOverride`);
 
   const overrides = new Map();
   for (const row of data || []) {

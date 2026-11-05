@@ -15,7 +15,7 @@
  * whichever student is currently selected.
  */
 
-import * as cheerio from 'cheerio';
+import * as cheerio from '../../core/html.js';
 import { ENDPOINTS } from '../config/constants.js';
 import { checkSessionValidity } from '../auth/credentials.js';
 import { groupByFamily, forestHasChildren } from '../../core/termTree.js';

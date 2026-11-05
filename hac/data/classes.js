@@ -5,12 +5,20 @@
  *
  * Term switching caches the viewstate on `session.cache.classes` so a follow-up
  * term request can postback without re-fetching the base page.
+ *
+ * Pages are read by the DOM-free scanner in fastScan.js first (several times
+ * cheaper on Workers CPU), falling back to the cheerio code below whenever the
+ * scanner can't vouch for the page. `HAC_FAST_PATH` controls this: unset/"on"
+ * scans first, "off" always uses cheerio, "verify" runs both, logs any
+ * difference and returns the cheerio result.
  */
 
-import * as cheerio from 'cheerio';
+import * as cheerio from '../../core/html.js';
 import { HAC_ENDPOINTS } from '../config/constants.js';
 import { checkSessionValidity } from '../auth/credentials.js';
 import { ValidationError } from '../../core/errors.js';
+import { env } from '../../core/env.js';
+import { scanViewState, scanTermInfo, scanClasses, hiddenRanges } from './fastScan.js';
 
 function splitClassHeaderAndCourseName(classText) {
   const parts = classText.split(' ');
@@ -41,21 +49,56 @@ function extractViewStateData($) {
   };
 }
 
+/**
+ * A fetched Assignments page. Its DOM is built only if a reader needs it, and
+ * script/comment ranges are found once for all fast readers.
+ */
+function pageOf(html) {
+  let $;
+  let ranges;
+  return {
+    html,
+    get $() { return ($ ??= cheerio.load(html)); },
+    get ranges() { return (ranges ??= hiddenRanges(html)); },
+  };
+}
+
+/** Read the page with the fast scanner, falling back to (or checking against) cheerio. */
+function read(page, label, fast, slow) {
+  const mode = (env.HAC_FAST_PATH || 'on').toLowerCase();
+  if (mode === 'off' || typeof page.html !== 'string') return slow(page.$);
+  const quick = fast(page.html, page.ranges);
+  if (mode === 'verify') {
+    const reference = slow(page.$);
+    if (JSON.stringify(quick) !== JSON.stringify(reference)) {
+      console.warn(`hac fast path: ${label} ${quick === null ? 'fell back' : 'MISMATCH'}`);
+    }
+    return reference;
+  }
+  if (quick !== null) return quick;
+  console.warn(`hac fast path: ${label} fell back to cheerio`);
+  return slow(page.$);
+}
+
+const readViewState = (page) => read(page, 'viewstate', scanViewState, extractViewStateData);
+const readTermInfo = (page) => read(page, 'terms', scanTermInfo, extractTermInfo);
+const readClasses = (page) => read(page, 'classes', scanClasses, extractClasses);
+
 async function fetchAssignmentsPage(session, link, term, progressTracker) {
   const classesCache = session.cache.classes;
   const fetchNew = !term ||
     (classesCache && classesCache.term === term) ||
     !(term && classesCache && classesCache.viewstate && classesCache.eventvalidation);
 
-  let $, viewstate, eventvalidation, year;
+  let page, viewstate, eventvalidation, year;
 
   if (fetchNew) {
     progressTracker?.update?.(65, term ? 'Going to term' : 'Fetching classes');
     const scoresResponse = await session.get(link + HAC_ENDPOINTS.ASSIGNMENTS);
     checkSessionValidity(scoresResponse);
-    $ = cheerio.load(scoresResponse.data);
+    page = pageOf(scoresResponse.data);
 
-    const data = extractViewStateData($);
+    const data = readViewState(page);
     ({ viewstate, eventvalidation, year } = data);
     session.cache.classes = { viewstate, eventvalidation, year, term: data.term };
   } else {
@@ -70,11 +113,11 @@ async function fetchAssignmentsPage(session, link, term, progressTracker) {
 
     const termResponse = await session.post(link + HAC_ENDPOINTS.ASSIGNMENTS, termData);
     checkSessionValidity(termResponse);
-    $ = cheerio.load(termResponse.data);
-    session.cache.classes = extractViewStateData($);
+    page = pageOf(termResponse.data);
+    session.cache.classes = readViewState(page);
   }
 
-  return $;
+  return page;
 }
 
 function extractTermInfo($) {
@@ -156,22 +199,22 @@ function extractClasses($) {
 }
 
 async function classes(session, link, options, progressTracker) {
-  const $ = await fetchAssignmentsPage(session, link, options.term, progressTracker);
-  const { term, termList } = extractTermInfo($);
-  return { scoresIncluded: true, termList, term, classes: extractClasses($) };
+  const page = await fetchAssignmentsPage(session, link, options.term, progressTracker);
+  const { term, termList } = readTermInfo(page);
+  return { scoresIncluded: true, termList, term, classes: readClasses(page) };
 }
 
 async function singleClass(session, link, options, progressTracker) {
   if (!options.class) {
     throw new ValidationError('Missing required parameters (class)');
   }
-  const $ = await fetchAssignmentsPage(session, link, options.term, progressTracker);
-  const { term, termList } = extractTermInfo($);
-  const currentClass = extractClasses($).find((c) => c.name === options.class);
+  const page = await fetchAssignmentsPage(session, link, options.term, progressTracker);
+  const { term, termList } = readTermInfo(page);
+  const currentClass = readClasses(page).find((c) => c.name === options.class);
   if (!currentClass) {
     throw new ValidationError('Class not found');
   }
   return { scoresIncluded: true, termList, term, class: currentClass };
 }
 
-export { classes, singleClass };
+export { classes, singleClass, extractClasses, extractTermInfo, extractViewStateData };

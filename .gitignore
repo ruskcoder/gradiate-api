@@ -13,3 +13,8 @@ CLAUDE.md
 graphify-out/
 *.har
 *.py
+# Cloudflare
+.wrangler/
+.dev.vars
+.dev.vars.*
+!.dev.vars.example

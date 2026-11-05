@@ -6,7 +6,7 @@
  * render one instead.)
  */
 
-import * as cheerio from 'cheerio';
+import * as cheerio from '../../core/html.js';
 import { checkSessionValidity, tokenBody, portalUrl, lazyPortalUrl } from '../auth/credentials.js';
 
 const MONTH_REGEX = /\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4}\b/i;

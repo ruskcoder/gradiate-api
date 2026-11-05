@@ -1,167 +1,101 @@
-import { fileURLToPath } from 'url';
-import path from 'path';
-import process from 'process';
+/**
+ * Gradiate API — Cloudflare Worker entry point.
+ *
+ * `fetch` serves every HTTP request; `scheduled` runs the cron trigger that
+ * replaced the old in-process push timer. Static files (the API docs SPA and
+ * /static) are served by Workers Static Assets straight from docs/dist without
+ * running this code at all; only API routes and the docs' client-side routes
+ * reach the Worker.
+ */
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-import express from 'express';
-import cors from 'cors';
-import helmet from 'helmet';
-import rateLimit from 'express-rate-limit';
-import dotenv from 'dotenv';
-
-dotenv.config();
-
-const app = express();
-
-// Sit behind a reverse proxy (Vercel / nginx) in production; trust it so the
-// rate limiter keys off the real client IP rather than the proxy's.
-app.set('trust proxy', 1);
-
-// Baseline security headers (nosniff, frameguard, HSTS, etc.). The CSP is
-// loosened just enough for the docs site: inline styles (syntax highlighting)
-// and `connect-src *` so the playground can target another API host.
-app.use(helmet({
-  contentSecurityPolicy: {
-    directives: {
-      'style-src': ["'self'", "'unsafe-inline'"],
-      'img-src': ["'self'", 'data:', 'https:'],
-      'connect-src': ["'self'", '*'],
-    },
-  },
-}));
-
-// Cap request bodies. Login/session envelopes are small; without a limit a
-// client could POST an arbitrarily large body and exhaust memory.
-app.use(express.json({ limit: '256kb' }));
-
-app.use((err, req, res, next) => {
-  if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
-    return res.status(400).json({ 
-      success: false, 
-      message: 'Invalid JSON: ' + err.message 
-    });
-  }
-  next(err);
-});
-
+import { bindEnv, env } from './core/env.js';
+import {
+  HttpError, Router, json, finalize, preflight, readJsonBody, queryObject,
+} from './core/http.js';
 import * as webPushService from './web-push.js';
-import supabase from './database.js';
+import { db } from './database.js';
 import { createPlatformRoutes } from './core/index.js';
 import hac from './hac/index.js';
 import skywardLegacy from './skyward-legacy/index.js';
 import powerschool from './powerschool/index.js';
-import demo from './demo/index.js';
+import { addDemoRoutes } from './demo/index.js';
 
-// Every platform is a registry object; core turns it into routes and mounts it
-// at its declared prefix. Add a platform by importing it and pushing it here.
+// Every platform is a registry object; core turns it into routes under its
+// declared mount. Add a platform by importing it and pushing it here.
 const platforms = [hac, skywardLegacy, powerschool];
 
-// All origins are allowed (Vercel preview deployments use unpredictable hosts).
-// The API uses no cookies/credentials from the browser, so this is safe.
-app.use(cors());
+const router = new Router();
+for (const platform of platforms) createPlatformRoutes(platform, router);
+addDemoRoutes(router);
 
-// Global rate limit — a coarse ceiling against scraping/abuse. The data routes
-// make outbound requests to school portals on the caller's behalf, so an
-// unthrottled client could use the API to hammer those portals.
-const globalLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  limit: Number(process.env.RATE_LIMIT_PER_MIN) || 120,
-  standardHeaders: 'draft-7',
-  legacyHeaders: false,
-  message: { success: false, message: 'Too many requests, please slow down.' },
-});
-app.use(globalLimiter);
+// Routes behind the tighter limit: unauthenticated writes and lookups
+// (subscription spam, username enumeration, push broadcasts).
+const STRICT_ROUTES = new Set(['/referral', '/subscribe', '/push/trigger']);
 
-// Tighter limit for unauthenticated write/enumeration endpoints (subscription
-// spam, username enumeration).
-const strictLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  limit: Number(process.env.STRICT_RATE_LIMIT_PER_MIN) || 20,
-  standardHeaders: 'draft-7',
-  legacyHeaders: false,
-  message: { success: false, message: 'Too many requests, please slow down.' },
-});
+const TOO_MANY = { success: false, message: 'Too many requests, please slow down.' };
 
-for (const platform of platforms) {
-  app.use(platform.mount, createPlatformRoutes(platform));
+/**
+ * Cloudflare's rate limiting binding, keyed by client IP. Counts are kept per
+ * Cloudflare location and are approximate. With no binding (local tests) or if
+ * the binding errors, requests are allowed.
+ */
+async function rateLimited(limiter, ip) {
+  if (!limiter || !ip) return false;
+  try {
+    const { success } = await limiter.limit({ key: ip });
+    return !success;
+  } catch {
+    return false;
+  }
 }
-app.use('/demo', demo);
-
-app.use('/static', express.static(__dirname + '/static'));
-
-// API docs: a prebuilt SPA (docs/ → `npm run docs:build`). Client-side routes
-// are GET-only and never collide with the POST platform routes.
-const docsDist = path.join(__dirname, 'docs', 'dist');
-app.use(express.static(docsDist, { index: false }));
-app.get(['/', '/guides/*', '/api/*', '/platforms', '/platforms/*'], (req, res) => {
-  res.sendFile(path.join(docsDist, 'index.html'), (err) => {
-    if (err) res.status(404).send('Docs not built. Run `npm run docs:build`.');
-  });
-});
 
 // Kept at its original path so existing web/mobile builds don't 404, but the
 // referral programme is gone: this now only answers "is this user blocked?".
 // That check reads BLOCKED_USERS, never the database, so it no longer 500s for a
 // username that has never signed in.
-app.get('/referral', strictLimiter, async (req, res) => {
-  try {
-    let { username } = req.query;
-    // `?username=a&username=b` parses to an array; reject anything non-string.
-    if (!username || typeof username !== 'string') {
-      return res.status(400).json({ error: 'username is required' });
-    }
-    username = username.toLowerCase();
-
-    const blockedEnv = process.env.BLOCKED_USERS || '';
-    const blockedList = blockedEnv.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
-    const blocked = blockedList.includes(username);
-
-    res.json({ blocked });
-  } catch (error) {
-    console.error('Blocked-user lookup failed:', error);
-    res.status(500).json({ error: 'Internal Server Error' });
+router.get('/referral', (req) => {
+  let { username } = req.query;
+  // `?username=a&username=b` parses to an array; reject anything non-string.
+  if (!username || typeof username !== 'string') {
+    return json(400, { error: 'username is required' });
   }
+  username = username.toLowerCase();
+
+  const blockedList = (env.BLOCKED_USERS || '')
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+  return json(200, { blocked: blockedList.includes(username) });
 });
 
-app.get('/vapid-public-key', (req, res) => {
-  const { platform } = req.query;
-  const publicKey = webPushService.getVapidPublicKey(platform);
-  res.json({ publicKey });
+router.get('/vapid-public-key', (req) => {
+  const publicKey = webPushService.getVapidPublicKey(req.query.platform);
+  return json(200, { publicKey });
 });
 
 // Public read of the announcements table for the web app. These are broadcast
 // notices, not per-user data, so no auth is required.
-app.get('/web-notifications', async (req, res) => {
+router.get('/web-notifications', async () => {
   try {
-    const { data, error } = await supabase
-      .from('notifications')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      throw error;
-    }
-
-    res.json({ data });
+    const data = await db.select('notifications?select=*&order=created_at.desc');
+    return json(200, { data });
   } catch (error) {
     console.error('web-notifications fetch failed:', error);
-    res.status(500).json({ error: 'Internal Server Error' });
+    return json(500, { error: 'Internal Server Error' });
   }
 });
 
 // Public aggregate for the splash page: total users and users per school, never
-// individual rows. Cached in memory and at the edge so a busy splash page costs
-// at most one tiny database read per STATS_TTL_MS per instance.
+// individual rows. Cached in the isolate and in the Cloudflare location's cache,
+// so a busy splash page costs at most one tiny database read per STATS_TTL_MS.
 const STATS_TTL_MS = 30 * 1000;
-let statsCache = { at: 0, body: null, pending: null };
+const STATS_HEADERS = { 'Cache-Control': 'public, max-age=30, stale-while-revalidate=60' };
+let statsCache = { at: 0, body: null };
 
 async function loadStats() {
   // `school_stats()` groups `users` in the database (see sql/school_stats.sql),
   // so the counts are always live and only ~one row per school comes back.
-  const { data, error } = await supabase.rpc('school_stats');
-  if (error) throw error;
+  const data = await db.rpc('school_stats');
   const schools = data
     .filter((row) => row.count > 0)
     .sort((a, b) => b.count - a.count)
@@ -170,92 +104,147 @@ async function loadStats() {
   return { total, schools };
 }
 
-app.get('/stats', async (req, res) => {
+router.get('/stats', async (req) => {
   try {
-    if (!statsCache.body || Date.now() - statsCache.at > STATS_TTL_MS) {
-      // Collapse concurrent refreshes into one query.
-      statsCache.pending ??= loadStats().finally(() => { statsCache.pending = null; });
-      statsCache.body = await statsCache.pending;
-      statsCache.at = Date.now();
+    if (statsCache.body && Date.now() - statsCache.at <= STATS_TTL_MS) {
+      return json(200, statsCache.body, STATS_HEADERS);
     }
-    res.set('Cache-Control', 'public, max-age=30, stale-while-revalidate=60');
-    // Express adds an ETag, so an unchanged poll gets a bodiless 304.
-    res.json(statsCache.body);
+    // The Cache API is per Cloudflare location and only works on a custom
+    // domain (it is a no-op on workers.dev), so it backs up the isolate cache.
+    const cache = globalThis.caches?.default;
+    const cacheKey = new Request(new URL('/__cache/stats', req.url).href);
+    const cached = cache && await cache.match(cacheKey);
+    if (cached) return new Response(cached.body, cached);
+
+    const body = await loadStats();
+    statsCache = { at: Date.now(), body };
+    const response = json(200, body, STATS_HEADERS);
+    if (cache) req.waitUntil(cache.put(cacheKey, response.clone()));
+    return response;
   } catch (error) {
     console.error('stats fetch failed:', error);
-    res.status(500).json({ error: 'Internal Server Error' });
+    return json(500, { error: 'Internal Server Error' });
   }
 });
 
-app.post('/subscribe', strictLimiter, async (req, res) => {
+router.post('/subscribe', async (req) => {
   try {
     const { payload, platform = 'web' } = req.body;
     if (!payload) {
-      return res.status(400).json({ message: 'payload is required' });
+      return json(400, { message: 'payload is required' });
     }
     await webPushService.addSubscription(payload, platform);
     console.log('New device subscribed:', platform);
-    res.status(201).json({ message: 'Subscription received successfully.' });
+    return json(201, { message: 'Subscription received successfully.' });
   } catch (error) {
     console.error('Failed to save subscription:', error);
-    res.status(500).json({ message: 'Failed to save subscription' });
+    return json(500, { message: 'Failed to save subscription' });
   }
 });
 
-async function sendPushToAllDevices() {
-  return webPushService.sendPushToAllDevices();
+/** Broadcast and report what actually landed. */
+async function broadcast() {
+  const delivery = await webPushService.sendPushToAllDevices();
+  // A broadcast where every ticket was rejected is not a success, however
+  // cleanly the request itself completed — reporting it as one is what hid a
+  // total Android push outage behind a 200.
+  const attempted = delivery.expo.attempted + delivery.web.attempted;
+  const sent = delivery.expo.sent + delivery.web.sent;
+  return { success: attempted === 0 || sent > 0, delivery };
 }
 
-// Deployment schedulers can call this endpoint because in-process timers do not
-// survive scale-to-zero/serverless restarts. Keep it protected: broadcasting a
-// trigger makes every subscribed client perform a portal fetch.
-app.post('/push/trigger', strictLimiter, async (req, res) => {
-  const configuredSecret = process.env.PUSH_TRIGGER_SECRET;
-  const suppliedSecret = req.get('authorization')?.replace(/^Bearer\s+/i, '');
+// Manual trigger, protected by a shared secret: broadcasting makes every
+// subscribed client perform a portal fetch. The hourly cron below is the
+// normal path.
+router.post('/push/trigger', async (req) => {
+  const configuredSecret = env.PUSH_TRIGGER_SECRET;
+  const suppliedSecret = req.headers.get('authorization')?.replace(/^Bearer\s+/i, '');
   if (!configuredSecret || suppliedSecret !== configuredSecret) {
-    return res.status(401).json({ success: false, message: 'Unauthorized' });
+    return json(401, { success: false, message: 'Unauthorized' });
   }
   try {
-    const delivery = await sendPushToAllDevices();
-    // Report what actually landed. A broadcast where every ticket was rejected
-    // is not a success, however cleanly the request itself completed — reporting
-    // it as one is what hid a total Android push outage behind a 200.
-    const attempted = delivery.expo.attempted + delivery.web.attempted;
-    const sent = delivery.expo.sent + delivery.web.sent;
-    res.json({ success: attempted === 0 || sent > 0, delivery });
+    return json(200, await broadcast());
   } catch (error) {
     console.error('Scheduled push trigger failed:', error);
-    res.status(500).json({ success: false, message: 'Push trigger failed' });
+    return json(500, { success: false, message: 'Push trigger failed' });
   }
 });
 
-// How often to fire the "go fetch" trigger, in minutes. Falls back to 1 hour.
-const pushIntervalMinutes = Number(process.env.PUSH_INTERVAL_MINUTES) || 60;
-setInterval(() => {
-  sendPushToAllDevices()
-    .catch(() => console.error('Failed to send push notifications.'));
-}, 1000 * 60 * pushIntervalMinutes);
-console.log(`Push trigger scheduled every ${pushIntervalMinutes} minute(s)`);
+// The docs SPA's client-side routes. `/` itself is served by the assets layer.
+function isDocsRoute(path) {
+  return path === '/' || path === '/platforms' || /^\/(?:guides|api|platforms)\//.test(path);
+}
 
-app.use((err, req, res, next) => {
-  console.error('Global error handler:', err);
+async function serveDocs(request) {
+  if (!env.ASSETS) return new Response('Docs not built. Run `npm run docs:build`.', { status: 404 });
+  const index = await env.ASSETS.fetch(new Request(new URL('/', request.url)));
+  return new Response(index.body, { status: index.ok ? 200 : index.status, headers: index.headers });
+}
 
-  const status = err.status || err.statusCode || 500;
-  // Only surface a message for deliberate 4xx client errors (validation, auth).
-  // For 5xx, hide the internal error text so stack/DB details aren't leaked.
-  const message = status < 500 ? err.message || 'Bad Request' : 'Internal Server Error';
+async function handle(request, ctx) {
+  if (request.method === 'OPTIONS') return preflight(request);
 
-  if (!res.headersSent) {
-    res.status(status).json({
-      success: false,
-      message,
+  const url = new URL(request.url);
+  const method = request.method === 'HEAD' ? 'GET' : request.method;
+  const handler = router.match(method, url.pathname);
+
+  if (!handler) {
+    if (method === 'GET' && isDocsRoute(url.pathname)) return serveDocs(request);
+    return new Response(`Cannot ${request.method} ${url.pathname}`, {
+      status: 404,
+      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
     });
   }
-});
 
-const port = Number(process.env.PORT) || 3000;
-app.listen(port, () => {
-  console.log(`Main App listening on http://localhost:${port}`);
-});
+  const ip = request.headers.get('cf-connecting-ip');
+  if (await rateLimited(env.RATE_LIMITER, ip)) return json(429, TOO_MANY);
+  const path = url.pathname.toLowerCase().replace(/\/+$/, '');
+  if (STRICT_ROUTES.has(path) && await rateLimited(env.STRICT_RATE_LIMITER, ip)) return json(429, TOO_MANY);
 
-export default app;
+  const req = {
+    method,
+    url,
+    headers: request.headers,
+    query: queryObject(url.searchParams),
+    body: {},
+    ip,
+    waitUntil: (promise) => ctx.waitUntil(promise),
+  };
+
+  try {
+    if (method === 'POST' || method === 'PUT' || method === 'PATCH') {
+      req.body = await readJsonBody(request);
+    }
+    return await handler(req);
+  } catch (error) {
+    if (!(error instanceof HttpError)) console.error('Global error handler:', error);
+    const status = error.status || error.statusCode || 500;
+    // Only surface a message for deliberate 4xx client errors (validation, auth).
+    // For 5xx, hide the internal error text so stack/DB details aren't leaked.
+    const message = status < 500 ? error.message || 'Bad Request' : 'Internal Server Error';
+    return json(status, { success: false, message });
+  }
+}
+
+export default {
+  async fetch(request, workerEnv, ctx) {
+    bindEnv(workerEnv);
+    const response = finalize(await handle(request, ctx));
+    if (request.method === 'HEAD') return new Response(null, response);
+    return response;
+  },
+
+  // Cron trigger (wrangler.jsonc → triggers.crons): the hourly "go fetch"
+  // broadcast. In-process timers don't survive on Workers, so this replaced
+  // the setInterval the Node server used.
+  async scheduled(controller, workerEnv, ctx) {
+    bindEnv(workerEnv);
+    ctx.waitUntil(
+      broadcast()
+        .then((result) => console.log('Scheduled push:', JSON.stringify(result)))
+        .catch((error) => console.error('Scheduled push failed:', error))
+    );
+  },
+};
+
+export { handle, router };

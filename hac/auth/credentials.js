@@ -10,12 +10,13 @@
  * and `formatLink`, HAC's portal-URL normalizer.
  */
 
-import process from 'process';
-import * as cheerio from 'cheerio';
+import * as cheerio from '../../core/html.js';
+import { env } from '../../core/env.js';
 import { AuthenticationError, ValidationError, APIError } from '../../core/errors.js';
 import { createSessionValidator, streamOrThrow, assertSafeHttpUrl } from '../../core/platform.js';
 import { debugLog } from '../../core/debug.js';
 import { HAC_ENDPOINTS, ERROR_MESSAGES, LOGGED_OUT_MARKERS } from '../config/constants.js';
+import { scanInputValue } from '../data/fastScan.js';
 
 // HAC needs a custom link normalizer (drop a trailing /HomeAccess), so it does
 // not use core's defaultFormatLink.
@@ -62,11 +63,11 @@ function portalLoginError(html) {
 const checkSessionValidity = createSessionValidator(LOGGED_OUT_MARKERS);
 
 function isTestCredentials(username, password) {
-  return username === process.env.TESTUSER && password === process.env.TESTPSSWD;
+  return username === env.TESTUSER && password === env.TESTPSSWD;
 }
 
 function getProductionCredentials() {
-  return { username: process.env.USERNAME, password: process.env.PASSWORD };
+  return { username: env.USERNAME, password: env.PASSWORD };
 }
 
 function createLoginData(username = '', password = '', token = '') {
@@ -134,8 +135,11 @@ async function credentialsAuth(session, loginData, progressTracker) {
 
   try {
     const { data: loginPage } = await session.get(loginUrl);
-    const $ = cheerio.load(loginPage);
-    const token = $("input[name='__RequestVerificationToken']").val();
+    // Only a district pick needs a DOM; the token is read straight off the markup.
+    const $ = district || typeof loginPage !== 'string' ? cheerio.load(loginPage) : null;
+    const token = $
+      ? $("input[name='__RequestVerificationToken']").val()
+      : scanInputValue(loginPage, '__RequestVerificationToken');
     hacLoginData['__RequestVerificationToken'] = token;
     session.setVerificationToken(token);
 
@@ -153,7 +157,7 @@ async function credentialsAuth(session, loginData, progressTracker) {
 
     const loginResult = await session.post(loginUrl, hacLoginData);
 
-    // A successful HAC login redirects away from the LogOn view (axios follows
+    // A successful HAC login redirects away from the LogOn view (the session follows
     // it); a rejected one re-renders that same view with an error summary. So
     // the question is only ever "are we still looking at the login form?".
     if (isLoggedOutPage(loginResult.data)) {

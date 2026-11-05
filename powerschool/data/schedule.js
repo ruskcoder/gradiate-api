@@ -8,7 +8,7 @@
  *   - bellSchedule()  -> per-weekday ordered period times (see bellSchedule.js).
  */
 
-import * as cheerio from 'cheerio';
+import * as cheerio from '../../core/html.js';
 import { ENDPOINTS } from '../config/constants.js';
 import { checkSessionValidity } from '../auth/credentials.js';
 import { parseStudents, selectedStudentId, fetchHome } from './_grid.js';

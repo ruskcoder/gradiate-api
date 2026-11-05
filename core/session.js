@@ -1,28 +1,214 @@
-import axios from 'axios';
-import { wrapper } from 'axios-cookiejar-support';
-import { CookieJar } from 'tough-cookie';
-import { attachDebugLogger } from './debug.js';
+/**
+ * The portal HTTP client every platform uses.
+ *
+ * Built on fetch() so it runs on Cloudflare Workers, with the cookie jar and
+ * redirect handling done here, one hop at a time. (Workers' own redirect
+ * following would drop the Set-Cookie headers of intermediate hops, which is
+ * exactly where portal logins set their session cookies.)
+ *
+ * The request/response surface deliberately mirrors the axios calls the
+ * platforms were written against, so platform code is unchanged:
+ *   session.get(url, { headers, maxRedirects, validateStatus })
+ *   session.post(url, data, { headers, ... })
+ *   → { data, status, statusText, headers, request: { res: { responseUrl } } }
+ * and a non-2xx status throws an error carrying `.response` and `.status`.
+ */
+
+import { CookieJar } from './cookies.js';
+import { debugRequest, debugResponse } from './debug.js';
+
+// What the portals have been receiving from the axios-based client, kept
+// identical so no portal sees a different-looking client after the move.
+const DEFAULT_HEADERS = {
+  Accept: 'application/json, text/plain, */*',
+  'Content-Type': 'application/x-www-form-urlencoded',
+  'User-Agent': 'axios/1.9.0',
+};
+
+const MAX_REDIRECTS = 21; // follow-redirects' default, which axios used
+const okStatus = (status) => status >= 200 && status < 300;
+
+function isPlainObject(value) {
+  if (value === null || typeof value !== 'object') return false;
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null || Array.isArray(value);
+}
+
+/** Flatten an object into form fields the way axios did (`a[b]=…`, `list[]=…`). */
+function appendForm(params, value, key) {
+  if (value === undefined) return;
+  if (value === null) {
+    params.append(key, '');
+  } else if (value instanceof Date) {
+    params.append(key, value.toISOString());
+  } else if (Array.isArray(value)) {
+    for (const item of value) appendForm(params, item, `${key}[]`);
+  } else if (typeof value === 'object') {
+    for (const [k, v] of Object.entries(value)) appendForm(params, v, `${key}[${k}]`);
+  } else {
+    params.append(key, String(value));
+  }
+}
+
+/** Encode a request body like axios' default transformRequest. */
+function serializeBody(data, headers) {
+  if (data === undefined || data === null) return undefined;
+  if (typeof data === 'string') return data;
+  if (data instanceof URLSearchParams) {
+    if (!headers.has('content-type')) headers.set('content-type', 'application/x-www-form-urlencoded;charset=utf-8');
+    return data.toString();
+  }
+  if (!isPlainObject(data)) return data; // ArrayBuffer, Blob, FormData, streams: pass through
+
+  const contentType = (headers.get('content-type') || '').toLowerCase();
+  if (contentType.includes('application/x-www-form-urlencoded')) {
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(data)) appendForm(params, value, key);
+    return params.toString();
+  }
+  if (!contentType) headers.set('content-type', 'application/json');
+  return JSON.stringify(data);
+}
+
+/**
+ * axios parsed any JSON-looking text body into an object. Only try when the
+ * first character could start JSON, so an HTML page never pays for a failed parse.
+ */
+function parseBody(text) {
+  if (!text) return text;
+  let i = 0;
+  while (i < text.length && text.charCodeAt(i) <= 32) i++;
+  const c = text[i];
+  if (c === '{' || c === '[' || c === '"' || c === '-' || (c >= '0' && c <= '9') || c === 't' || c === 'f' || c === 'n') {
+    try { return JSON.parse(text); } catch { return text; }
+  }
+  return text;
+}
+
+function setCookieHeaders(headers) {
+  if (typeof headers.getSetCookie === 'function') return headers.getSetCookie();
+  if (typeof headers.getAll === 'function') return headers.getAll('set-cookie');
+  const single = headers.get('set-cookie');
+  return single ? [single] : [];
+}
+
+function headersObject(headers) {
+  const out = {};
+  for (const [key, value] of headers) out[key] = value;
+  const cookies = setCookieHeaders(headers);
+  if (cookies.length) out['set-cookie'] = cookies;
+  return out;
+}
+
+function isSubdomain(sub, domain) {
+  return sub.endsWith('.' + domain);
+}
+
+function statusError(response) {
+  const error = new Error(`Request failed with status code ${response.status}`);
+  error.name = 'AxiosError';
+  error.code = response.status >= 500 ? 'ERR_BAD_RESPONSE' : 'ERR_BAD_REQUEST';
+  error.isAxiosError = true;
+  error.status = response.status;
+  error.response = response;
+  error.config = response.config;
+  return error;
+}
+
+async function discard(res) {
+  try { await res.body?.cancel(); } catch { /* already closed */ }
+}
+
+/** One logical request: every redirect hop carries and collects cookies. */
+async function send(session, method, url, data, config = {}) {
+  const headers = new Headers(session.defaults.headers);
+  if (config.headers) {
+    for (const [key, value] of Object.entries(config.headers)) {
+      if (value !== undefined && value !== null) headers.set(key, String(value));
+    }
+  }
+  let body = serializeBody(data, headers);
+  const maxRedirects = config.maxRedirects ?? MAX_REDIRECTS;
+  const validateStatus = config.validateStatus === undefined ? okStatus : config.validateStatus;
+
+  let current = new URL(url);
+  let verb = method;
+  let redirects = 0;
+
+  for (;;) {
+    const cookie = session.defaults.jar.getCookieString(current);
+    if (cookie) headers.set('cookie', cookie);
+    else headers.delete('cookie');
+
+    const trace = debugRequest(session.label, verb, current.href, redirects === 0 ? data : undefined);
+    let res;
+    try {
+      res = await fetch(current.href, { method: verb, headers, body, redirect: 'manual' });
+    } catch (error) {
+      debugResponse(trace, 0, 0, null, error);
+      throw error;
+    }
+    session.defaults.jar.storeAll(setCookieHeaders(res.headers), current);
+
+    const location = res.headers.get('location');
+    if (maxRedirects > 0 && location && res.status >= 300 && res.status < 400) {
+      await discard(res);
+      if (redirects >= maxRedirects) throw new Error('Maximum number of redirects exceeded');
+      redirects++;
+      const next = new URL(location, current);
+      debugResponse(trace, res.status, 0, next.href);
+
+      // Browser-style method rewriting, as follow-redirects did.
+      if (((res.status === 301 || res.status === 302) && verb === 'POST') ||
+          (res.status === 303 && verb !== 'GET' && verb !== 'HEAD')) {
+        verb = 'GET';
+        body = undefined;
+        for (const key of [...headers.keys()]) if (key.startsWith('content-')) headers.delete(key);
+      }
+      // Never carry credentials to a different site.
+      if ((next.protocol !== current.protocol && next.protocol !== 'https:') ||
+          (next.host !== current.host && !isSubdomain(next.host, current.host))) {
+        headers.delete('authorization');
+        headers.delete('proxy-authorization');
+      }
+      current = next;
+      continue;
+    }
+
+    const text = await res.text();
+    debugResponse(trace, res.status, text.length, null);
+    const response = {
+      data: parseBody(text),
+      status: res.status,
+      statusText: res.statusText,
+      headers: headersObject(res.headers),
+      config: { ...config, method: verb.toLowerCase(), url: current.href },
+      request: { res: { responseUrl: current.href }, responseURL: current.href },
+    };
+    if (validateStatus && !validateStatus(res.status)) throw statusError(response);
+    return response;
+  }
+}
 
 class SessionWrapper {
-  constructor(axiosInstance) {
-    this.axios = axiosInstance;
+  constructor(jar = new CookieJar(), label = 'new') {
+    // `defaults.jar` is read on every request, so code that swaps in a fresh jar
+    // (Microsoft sign-in retries, session restore) takes effect immediately.
+    this.defaults = { jar, headers: { ...DEFAULT_HEADERS } };
+    this.label = label;
     this.cache = {
       lastValidationTime: null,
-      verificationToken: null
+      verificationToken: null,
     };
     this.loginMetadata = null;
   }
 
-  async get(url, config) {
-    return this.axios.get(url, config);
+  get(url, config) {
+    return send(this, 'GET', url, undefined, config);
   }
 
-  async post(url, data, config) {
-    return this.axios.post(url, data, config);
-  }
-
-  get defaults() {
-    return this.axios.defaults;
+  post(url, data, config) {
+    return send(this, 'POST', url, data, config);
   }
 
   setLoginMetadata(loginType, loginData) {
@@ -58,17 +244,7 @@ class SessionWrapper {
 }
 
 function createSession() {
-  const jar = new CookieJar();
-  const axiosInstance = wrapper(axios.create({
-    withCredentials: true,
-    jar,
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded'
-    }
-  }));
-  attachDebugLogger(axiosInstance, 'new');
-
-  return new SessionWrapper(axiosInstance);
+  return new SessionWrapper(new CookieJar(), 'new');
 }
 
 function createSuccessResponse(data, session = null) {
@@ -84,31 +260,13 @@ function createSuccessResponse(data, session = null) {
 }
 
 function restoreSession(sessionData) {
-  const jar = new CookieJar();
-
-  if (sessionData.cookies) {
-    jar.fromJSON(sessionData.cookies);
-  }
-
-  const axiosInstance = wrapper(axios.create({
-    withCredentials: true,
-    jar,
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded'
-    }
-  }));
-  attachDebugLogger(axiosInstance, 'restored');
-
-  const session = new SessionWrapper(axiosInstance);
-
-  if (sessionData.cache) {
+  const session = new SessionWrapper(CookieJar.fromJSON(sessionData?.cookies), 'restored');
+  if (sessionData?.cache) {
     session.cache = sessionData.cache;
   }
-
-  if (sessionData.loginMetadata) {
+  if (sessionData?.loginMetadata) {
     session.setLoginMetadata(sessionData.loginMetadata.loginType, sessionData.loginMetadata.loginData);
   }
-
   return session;
 }
 
@@ -144,9 +302,7 @@ function seedCookiesIntoSession(session, cookies, url) {
 
   for (const [name, value] of pairs) {
     if (!name) continue;
-    try {
-      jar.setCookieSync(`${name}=${value}; Domain=${host}; Path=/`, url);
-    } catch { /* skip a cookie the jar rejects */ }
+    jar.setCookieSync(`${name}=${value}; Domain=${host}; Path=/`, url);
   }
   return session;
 }
@@ -161,7 +317,7 @@ function restoreCookiesIntoSession(session, sessionData) {
 
     if (data.cookies) {
       session.defaults.jar = CookieJar.fromJSON(data.cookies);
-      if (data.cache) {
+      if (data.cache && typeof data.cache === 'object') {
         session.cache = { ...session.cache, ...data.cache };
       }
       if (data.loginMetadata) {
@@ -170,6 +326,7 @@ function restoreCookiesIntoSession(session, sessionData) {
     } else {
       session.defaults.jar = CookieJar.fromJSON(data);
     }
+    session.label = 'restored';
   } catch (error) {
     console.error('Failed to restore session data:', error);
   }

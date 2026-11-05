@@ -12,13 +12,17 @@ here — never copy them into a platform.
 |---|---|---|
 | `errors.js` | `APIError`, `AuthenticationError`, `ValidationError`, `HTTP_STATUS` | Typed errors → JSON responses |
 | `progressTracker.js` | `ProgressTracker` | SSE progress (`stream:true`) or plain JSON |
-| `session.js` | `createSession`, `restoreCookiesIntoSession`, `createSuccessResponse`, `SessionWrapper`, … | Cookie-jar axios sessions + the `{ success, ..., session }` envelope |
+| `session.js` | `createSession`, `restoreCookiesIntoSession`, `createSuccessResponse`, `SessionWrapper`, … | fetch-based portal sessions (cookies and redirects handled hop by hop, axios-shaped responses) + the `{ success, ..., session }` envelope |
+| `cookies.js` | `CookieJar` | RFC 6265 cookie jar; serializes in tough-cookie's JSON format so stored client sessions keep working |
+| `html.js` | `load` | Drop-in for `cheerio.load` using htmlparser2 (plus parse5's implied `<tbody>`); platforms import it as `cheerio` |
+| `http.js` | `Router`, `json`, `readJsonBody`, … | The Worker's routing, CORS, security headers and JSON body parsing |
+| `env.js` | `env`, `bindEnv` | Worker secrets and bindings, readable from any module at request time |
 | `reauthSession.js` | `createReauthSession` | Transparent auto-relogin wrapper (platform supplies `isSessionExpired`) |
 | `validation.js` | `createLoginValidation` | Standard login-body validation helper |
 | `auth/index.js` | `authenticate`, `performLogin` | The one auth entry point: validate → reuse/relogin → dispatch by loginType |
 | `auth/classlink.js` | `loginClassLink` | Generic ClassLink SSO (clsession + credentials + 2FA icon), tile chosen by `ssoFilter` |
 | `auth/microsoft.js` | `loginMicrosoft` | Microsoft SSO extension point (stub) |
-| `routes.js` | `createPlatformRoutes`, `ROUTE_TABLE` | Builds a router from a platform registry |
+| `routes.js` | `createPlatformRoutes`, `ROUTE_TABLE` | Adds a platform registry's routes to the Worker router |
 
 Everything is re-exported from `core/index.js`.
 
