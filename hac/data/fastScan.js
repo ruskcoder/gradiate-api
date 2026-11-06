@@ -17,7 +17,7 @@ const ATTR_RE = /([^\s"'>/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+)))?/g;
 const VOID_TAGS = new Set(['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'source', 'track', 'wbr']);
 // Tags whose end we find by matching open/close tags. Elements HTML lets you
 // leave unclosed (p, li, td, option...) are deliberately absent.
-const BALANCED_TAGS = new Set(['a', 'span', 'label', 'div', 'strong', 'b', 'em', 'i', 'u', 'small', 'font', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'table', 'section', 'header']);
+const BALANCED_TAGS = new Set(['a', 'span', 'label', 'div', 'strong', 'b', 'em', 'i', 'u', 'small', 'font', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'table', 'section', 'header', 'strike', 's', 'del']);
 
 const tagRegex = (name) => new RegExp(`<(${name})\\b(?:[^>"']|"[^"]*"|'[^']*')*>`, 'gi');
 const INPUT_RE = tagRegex('input');
@@ -242,6 +242,35 @@ function dataRows(tableInner) {
   return out;
 }
 
+/**
+ * Bodies of the sibling <table>s in a category group, in document order (the DOM
+ * path reads every data row under the group, however many tables hold them). A
+ * group without tables is read as one body. Null if a table is nested in another,
+ * unclosed, or if rows sit outside any table.
+ */
+function tableBodies(groupInner) {
+  const re = new RegExp('<table\\b(?:[^>"\']|"[^"]*"|\'[^\']*\')*>', 'gi');
+  const bodies = [];
+  let outside = '';
+  let cursor = 0;
+  let m;
+  while ((m = re.exec(groupInner))) {
+    const openEnd = m.index + m[0].length;
+    const end = elementEnd(groupInner, 'table', openEnd);
+    if (end === -1) return bail('unclosed <table> in the category group');
+    const body = groupInner.slice(openEnd, groupInner.lastIndexOf('<', end - 1));
+    if (/<table\b/i.test(body)) return bail('table nested in a category table');
+    bodies.push(body);
+    outside += groupInner.slice(cursor, m.index);
+    cursor = end;
+    re.lastIndex = end;
+  }
+  if (bodies.length === 0) return [groupInner];
+  outside += groupInner.slice(cursor);
+  if (/<tr\b/i.test(outside)) return bail('table rows outside a table in the category group');
+  return bodies;
+}
+
 /** `.children().first().text()` of a cell: its first element's text. */
 function firstChildText(cell) {
   const m = anyOpenTag().exec(cell);
@@ -388,14 +417,16 @@ function readCard(html, card) {
 
   for (const group of groups) {
     const inner = html.slice(group.start, group.end);
-    if ((inner.match(/<table\b/gi) || []).length > 1 || /sg-asp-table-group|sg-content-grid/i.test(inner)) {
-      return bail('category group holds several tables');
+    if (/sg-asp-table-group|sg-content-grid/i.test(inner)) return bail('category group holds a nested group or grid');
+    const bodies = tableBodies(inner);
+    if (!bodies) return null;
+    const groupRows = [];
+    for (const body of bodies) {
+      const rows = dataRows(body);
+      if (!rows) return null;
+      groupRows.push(...rows);
     }
-    const tableAt = inner.search(/<table\b/i);
-    const body = tableAt === -1 ? inner : inner.slice(inner.indexOf('>', tableAt) + 1).replace(/<\/table\s*>[\s\S]*$/i, '');
-    const rows = dataRows(body);
-    if (!rows) return null;
-    for (const cells of rows) {
+    for (const cells of groupRows) {
       const cell = (i) => (cells[i] === undefined ? '' : textOf(cells[i]).trim());
       result.categories[cell(0)] = {
         studentsPoints: cell(1),
