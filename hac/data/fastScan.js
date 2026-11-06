@@ -468,9 +468,49 @@ function scanClasses(html, ranges = hiddenRanges(html)) {
   return Object.values(scheduleData);
 }
 
+const SPAN_RE = tagRegex('span');
+
+/**
+ * `$('span#id').text()` for each id, as { id: text | undefined } (undefined: no
+ * such span). Null if an id appears on several spans or a span can't be bounded.
+ */
+function scanSpanTexts(html, ids, ranges = hiddenRanges(html)) {
+  const wanted = new Set(ids);
+  const found = {};
+  for (const tag of startTags(html, SPAN_RE, ranges)) {
+    const id = tag.attrs.id;
+    if (id === undefined || !wanted.has(id)) continue;
+    if (id in found) return bail('several spans share an id');
+    const inner = innerOf(html, tag);
+    if (!inner) return null;
+    found[id] = textOf(html.slice(inner.start, inner.end));
+  }
+  return found;
+}
+
+/**
+ * `$('span.<name>').text()`: every matching span's text, joined. Null if one
+ * can't be bounded or they nest (the DOM would count the inner text twice).
+ */
+function scanSpanClassText(html, name, ranges = hiddenRanges(html)) {
+  const tags = tagsWithClass(html, name, ranges);
+  if (!tags) return null;
+  let text = '';
+  let lastEnd = -1;
+  for (const tag of tags) {
+    if (tag.name !== 'span') continue;
+    if (tag.index < lastEnd) return bail('nested spans with the same class');
+    const inner = innerOf(html, tag);
+    if (!inner) return null;
+    lastEnd = inner.outerEnd;
+    text += textOf(html.slice(inner.start, inner.end));
+  }
+  return text;
+}
+
 /** `$('input[name="…"]').val()` for a whole page. */
 function scanInputValue(html, name) {
   return inputValue(html, hiddenRanges(html), name);
 }
 
-export { scanViewState, scanTermInfo, scanClasses, scanInputValue, hiddenRanges, takeFallbackReason };
+export { scanViewState, scanTermInfo, scanClasses, scanInputValue, scanSpanTexts, scanSpanClassText, hiddenRanges, takeFallbackReason };

@@ -104,6 +104,7 @@ function track(req, defaultMessage, work) {
     try {
       await work(progressTracker);
     } catch (error) {
+      req.timing?.fail(error);
       progressTracker.error(error.status || error.statusCode || 500, error.message || defaultMessage);
     }
     return 'done';

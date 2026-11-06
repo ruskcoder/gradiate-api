@@ -19,11 +19,28 @@ function describe(url) {
   return url.host + path;
 }
 
+/**
+ * A failure in one line: its class, status and message (no query strings, which
+ * can carry OAuth codes), plus where an unexpected one was thrown from.
+ */
+function describeError(error) {
+  const message = String(error?.message ?? error).replace(/\?[^\s"')]*/g, '').slice(0, 200);
+  const status = error?.status || error?.statusCode;
+  const out = { name: error?.name || 'Error', status: status ?? null, message };
+  // Only a bug (no status of its own) needs a stack frame to be found.
+  if (!status && typeof error?.stack === 'string') {
+    out.at = error.stack.split('\n').slice(1, 3).map((l) => l.trim().replace(/^at /, '')).join(' < ').slice(0, 200);
+  }
+  return out;
+}
+
 function createTiming(route) {
   const start = Date.now();
   const timing = {
     route,
     authMs: null,
+    auth: null,
+    error: null,
     calls: 0,
     portalMs: 0,
     retries: 0,
@@ -49,6 +66,21 @@ function createTiming(route) {
       timing.authMs = Date.now() - start;
     },
 
+    /**
+     * How this request was authenticated: "reused" (a fresh session came with it),
+     * "revalidated" (one cheap probe), "relogin" (expired mid-request) or
+     * "login: <reason>". Logins cost CPU and seconds, so the reason is the lead
+     * for avoiding them. Reasons name a code path, never user data.
+     */
+    authHow(how) {
+      timing.auth = timing.auth && how === 'relogin' ? `${timing.auth} + relogin` : how;
+    },
+
+    /** Remember why the route failed, for the summary line. */
+    fail(error) {
+      timing.error = describeError(error);
+    },
+
     /** Write the summary line for this request. */
     log(outcome) {
       console.log(JSON.stringify({
@@ -56,12 +88,14 @@ function createTiming(route) {
         outcome,
         ms: Date.now() - start,
         authMs: timing.authMs,
+        auth: timing.auth,
         calls: timing.calls,
         portalMs: timing.portalMs,
         retries: timing.retries,
         timeouts: timing.timeouts,
         failures: timing.failures,
         slowest: timing.slowest,
+        ...(timing.error ? { error: timing.error } : {}),
       }));
     },
   };

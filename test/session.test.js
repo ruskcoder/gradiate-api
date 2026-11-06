@@ -131,3 +131,28 @@ test('timing keeps the slowest calls without query strings or token-like segment
   ]);
   assert.equal(timing.portalMs, 1200);
 });
+
+test('timing says how a request authenticated and why it failed, without query strings', () => {
+  const lines = [];
+  const realLog = console.log;
+  console.log = (line) => lines.push(JSON.parse(line));
+  try {
+    const timing = createTiming('/hac/classes');
+    timing.authHow('login: session expired');
+    timing.authHow('relogin');
+    const error = Object.assign(new TypeError('x is undefined at https://hac.example.org/a?code=SECRET'), { status: undefined });
+    timing.fail(error);
+    timing.log('error 500');
+    const known = createTiming('/hac/info');
+    known.fail(Object.assign(new Error('Invalid session or password'), { status: 401 }));
+    known.log('error 401');
+  } finally {
+    console.log = realLog;
+  }
+  assert.equal(lines[0].auth, 'login: session expired + relogin');
+  assert.equal(lines[0].error.name, 'TypeError');
+  assert.ok(!JSON.stringify(lines[0]).includes('SECRET'));
+  assert.ok(lines[0].error.at, 'an unexpected error names where it was thrown');
+  assert.equal(lines[1].error.status, 401);
+  assert.equal(lines[1].error.at, undefined, 'a handled error needs no stack frame');
+});

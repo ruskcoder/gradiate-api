@@ -152,6 +152,7 @@ async function authenticate(req, platform, progressTracker) {
   // the request, and is what routes.js serializes back to the client — so the
   // caller transparently receives the NEW session rather than the expired one.
   const relogin = async () => {
+    timing?.authHow('relogin');
     const fresh = await performLogin(platform, loginType, loginData, null, undefined, timing);
     if (!fresh) throw new AuthenticationError('Re-authentication failed');
     // A silent re-login can't clear an interactive 2FA prompt on its own. It
@@ -202,6 +203,9 @@ async function authenticate(req, platform, progressTracker) {
   }
 
   // --- Fast path: reuse a session the client sent back ---
+  // `whyLogin` records, for the request's timing line, why this fell through to a
+  // fresh login (each login is ~5 portal calls, seconds of wall time, CPU on Workers).
+  let whyLogin = 'no session sent';
   if (existingSession && Object.keys(existingSession).length > 0) {
     const base = restoreCookiesIntoSession(createSession(timing), existingSession);
     // SSO logins (ClassLink) carry no link in loginData — the portal link was
@@ -218,21 +222,31 @@ async function authenticate(req, platform, progressTracker) {
     const link = resolveLink(platform, loginData) || cachedLink;
 
     if (base.isSessionFresh(5)) {
-      if (link) return finish(base, link, loginData.username);
-      // No link to fetch data with — fall through to a fresh login.
+      if (link) {
+        timing?.authHow('reused');
+        return finish(base, link, loginData.username);
+      }
+      whyLogin = 'session has no portal link';
     } else if (link && platform.homeEndpoint !== undefined && platform.isSessionExpired) {
       // Cheap revalidation probe; if still logged in, skip the full login
       // (finish() re-stamps the validation time).
       try {
         const probe = await base.get(link + platform.homeEndpoint);
         if (!platform.isSessionExpired(probe.data)) {
+          timing?.authHow('revalidated');
           return finish(base, link, loginData.username);
         }
-      } catch { /* fall through to a fresh login */ }
+        whyLogin = 'session expired';
+      } catch {
+        whyLogin = 'session probe failed';
+      }
+    } else {
+      whyLogin = link ? 'session stale, platform cannot revalidate' : 'session stale, no portal link';
     }
   }
 
   // --- Fresh login ---
+  timing?.authHow(`login: ${whyLogin}`);
   const fresh = await performLogin(platform, loginType, loginData, progressTracker, undefined, timing);
   if (!fresh) return null; // streaming error already sent
   if (fresh.mfaRequired) return fresh; // SSO second factor pending
