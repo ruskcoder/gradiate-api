@@ -15,6 +15,7 @@ function assignmentRow(c, a, opts) {
   const link = opts.firstChildSpan
     ? `<span class="x">${name}</span>`
     : `<a href="#" onclick="return false;" title="Title: Essay ${a} > draft&#13;Category: ${cat}">\n            ${name}\n        </a>`;
+  const shown = opts.strikeNames && a % 3 === 0 ? `<strike>${link}</strike>` : link;
   const close = opts.omitRowClose ? '' : '</tr>';
   return `
     <tr class="sg-asp-table-data-row${a % 2 ? ' sg-asp-table-data-row-alt' : ''}">
@@ -23,7 +24,7 @@ function assignmentRow(c, a, opts) {
       </td><td>
         10/${(a % 27) + 1}/2026
       </td><td>
-        ${link}
+        ${shown}
       </td><td>
         ${cat}
       </td><td>
@@ -44,6 +45,12 @@ function card(c, opts) {
           <td>${cat}</td><td>850.00</td><td>1000.00</td><td>85.000%</td><td>50.0000</td><td>42.50</td>
         </tr>`;
   }
+  // Some districts put each category row in its own table inside the group.
+  const categoryTables = opts.severalCategoryTables
+    ? catRows.split('</tr>').filter((r) => r.trim()).map((r) => `<table class="sg-asp-table">${r}</tr></table>`).join('\n      ')
+    : `<table class="sg-asp-table" cellspacing="0" border="0" id="plnMain_rptAssigmnetsByCourse_dgCourseCategories_${c}">
+        <tr class="sg-asp-table-header-row"><td>Category</td><td>Student's Points</td><td>Maximum Points</td><td>Percent</td><td>Category Weight</td><td>Category Points</td></tr>${catRows}
+      </table>`;
   const tableOpen = `<table class="sg-asp-table" cellspacing="0" border="0" id="plnMain_rptAssigmnetsByCourse_dgCourseAssignments_${c}" style="border-width:0px;border-collapse:collapse;">`;
   const header = `<tr class="sg-asp-table-header-row"><th scope="col">Date Due</th><th scope="col">Date Assigned</th><th scope="col">Assignment</th><th scope="col">Category</th><th scope="col">Score</th><th scope="col">Total Points</th><th scope="col">Weight</th><th scope="col">Weighted Score</th><th scope="col">Weighted Total Points</th><th scope="col">Percentage</th></tr>`;
   const body = opts.explicitTbody ? `<tbody>${header}${rows}</tbody>` : `${header}${rows}`;
@@ -62,9 +69,7 @@ function card(c, opts) {
     </table>
     <br />
     <div class="sg-asp-table-group">
-      <table class="sg-asp-table" cellspacing="0" border="0" id="plnMain_rptAssigmnetsByCourse_dgCourseCategories_${c}">
-        <tr class="sg-asp-table-header-row"><td>Category</td><td>Student's Points</td><td>Maximum Points</td><td>Percent</td><td>Category Weight</td><td>Category Points</td></tr>${catRows}
-      </table>
+      ${categoryTables}
     </div>
   </div>
 </div>`;

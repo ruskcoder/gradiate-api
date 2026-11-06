@@ -38,7 +38,7 @@ test('fast reader matches the cheerio reader on the standard page', () => {
 });
 
 test('fast reader matches on markup variations it supports', () => {
-  for (const opts of [{ explicitTbody: true }, { omitRowClose: true }, { duplicateClass: true }, { noSelect: true }, { firstChildSpan: true }, { classes: 0 }]) {
+  for (const opts of [{ explicitTbody: true }, { omitRowClose: true }, { duplicateClass: true }, { noSelect: true }, { firstChildSpan: true }, { classes: 0 }, { strikeNames: true }, { severalCategoryTables: true }, { strikeNames: true, severalCategoryTables: true, omitRowClose: true }]) {
     assertSameAsReference(buildAssignmentsPage(opts));
   }
 });
