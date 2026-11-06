@@ -34,15 +34,31 @@
     "PUSH_SUBREQUEST_BUDGET": "45",
     // "on" (default), "off", or "verify" (runs the fast HAC reader and cheerio
     // side by side and logs any difference). See hac/data/classes.js.
-    "HAC_FAST_PATH": "on"
+    "HAC_FAST_PATH": "on",
+    // A single portal call (one redirect hop) is abandoned after this long;
+    // GETs are then retried PORTAL_RETRIES times on a fresh connection.
+    "PORTAL_TIMEOUT_MS": "10000",
+    "PORTAL_RETRIES": "1",
+    // A request still running after this long answers with a "portal is taking
+    // too long" error, so the apps never wait on a stalled portal forever.
+    "REQUEST_DEADLINE_MS": "40000"
   },
+
+  // Keep variables and secrets added in the dashboard when this file deploys
+  // (otherwise wrangler deletes dashboard-only plain-text variables).
+  "keep_vars": true,
 
   // Secrets (set with `npx wrangler secret put NAME`, or in .dev.vars locally):
   //   SUPABASE_URL, SUPABASE_KEY, VAPID_PRIVATE_KEY, FIREBASE_PUBLIC_KEY,
   //   FIREBASE_PRIVATE_KEY, PUSH_TRIGGER_SECRET, TESTUSER, TESTPSSWD, USERNAME,
   //   PASSWORD, MYNAME, BLOCKED_USERS (optional), DEBUG_REQUESTS (optional)
 
-  "observability": { "enabled": true },
+  // Logs, plus traces: each request's portal calls as timed spans in the
+  // dashboard (Observability → Traces), for finding the slow hop.
+  "observability": {
+    "enabled": true,
+    "traces": { "enabled": true }
+  },
 
   // Same port the Node server used, so the web/mobile/splash local configs keep working.
   "dev": { "port": 3000 },

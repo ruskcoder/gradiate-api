@@ -15,6 +15,7 @@ import {
 import * as webPushService from './web-push.js';
 import { db } from './database.js';
 import { createPlatformRoutes } from './core/index.js';
+import { createTiming } from './core/timing.js';
 import hac from './hac/index.js';
 import skywardLegacy from './skyward-legacy/index.js';
 import powerschool from './powerschool/index.js';
@@ -209,6 +210,7 @@ async function handle(request, ctx) {
     body: {},
     ip,
     waitUntil: (promise) => ctx.waitUntil(promise),
+    timing: createTiming(url.pathname),
   };
 
   try {

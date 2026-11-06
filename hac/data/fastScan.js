@@ -28,6 +28,22 @@ const TAG_AT = /<([a-z][a-z0-9]*)\b(?:[^>"']|"[^"]*"|'[^']*')*>/iy;
 const MARKUP_RE = /<[a-z/!?](?:[^>"']|"[^"]*"|'[^']*')*>/gi;
 const SKIP_RE = /<script\b[\s\S]*?<\/script\s*>|<style\b[\s\S]*?<\/style\s*>|<!--[\s\S]*?-->/gi;
 
+// Why the last reader call returned null, for the fallback log line. Readers are
+// synchronous, so the caller reads it right after the call. Reasons describe
+// markup structure only, never page text.
+let fallbackReason = null;
+function bail(reason) {
+  fallbackReason = reason;
+  return null;
+}
+
+/** The reason the most recent reader returned null (and clear it). */
+function takeFallbackReason() {
+  const reason = fallbackReason || 'unknown';
+  fallbackReason = null;
+  return reason;
+}
+
 /** Attributes of one start tag, first occurrence wins, values entity-decoded. */
 function attrsOf(tag) {
   const attrs = {};
@@ -97,7 +113,7 @@ function tagsWithClass(html, name, ranges, from = 0, to = html.length) {
     const m = TAG_AT.exec(html);
     if (!m) {
       if (html[lt + 1] === '/' || gt < at) continue; // a close tag or text
-      return null;
+      return bail(`unreadable tag around class ${name}`);
     }
     if (lt + m[0].length <= at) continue; // the name is in text after this tag
     lastTag = lt;
@@ -125,9 +141,9 @@ function elementEnd(html, name, openEnd, limit = html.length) {
 
 /** Inner markup of an element given its start tag record, or null if it can't be bounded. */
 function innerOf(html, tag, limit) {
-  if (!BALANCED_TAGS.has(tag.name)) return null;
+  if (!BALANCED_TAGS.has(tag.name)) return bail(`can't find the end of <${tag.name}>`);
   const end = elementEnd(html, tag.name, tag.end, limit);
-  if (end === -1) return null;
+  if (end === -1) return bail(`unclosed <${tag.name}>`);
   return { start: tag.end, end: html.lastIndexOf('<', end - 1), outerEnd: end };
 }
 
@@ -149,12 +165,12 @@ function reportCardRuns(html, ranges) {
   if (selects.length === 0) return { options: [] };
   const [select] = selects;
   if (selects.length > 1 || select.attrs.name !== 'ctl00$plnMain$ddlReportCardRuns' || select.attrs.id !== 'plnMain_ddlReportCardRuns') {
-    return null;
+    return bail(`${selects.length} report-card-run dropdowns, or a mismatched name/id`);
   }
   const close = html.slice(select.end).search(/<\/select\s*>/i);
-  if (close === -1) return null;
+  if (close === -1) return bail('report-card-run dropdown has no </select>');
   const body = html.slice(select.end, select.end + close);
-  if (/<(?!\/?(?:option|optgroup)\b)[a-z!/]/i.test(body)) return null;
+  if (/<(?!\/?(?:option|optgroup)\b)[a-z!/]/i.test(body)) return bail('unexpected tag inside the report-card-run dropdown');
 
   const options = [];
   OPTION_RE.lastIndex = 0;
@@ -204,7 +220,7 @@ function splitAt(markup, re) {
   let m;
   while ((m = re.exec(markup))) starts.push({ index: m.index, end: m.index + m[0].length, attrs: attrsOf(m[0]) });
   if (starts.length && /\S/.test(markup.slice(0, starts[0].index).replace(/<\/?(?:tbody|tr|td|th)\b[^>]*>/gi, ''))) {
-    return null;
+    return bail('markup before the first table row or cell');
   }
   return starts.map((s, i) => ({ attrs: s.attrs, inner: markup.slice(s.end, i + 1 < starts.length ? starts[i + 1].index : markup.length) }));
 }
@@ -232,7 +248,7 @@ function firstChildText(cell) {
   if (!m) return '';
   const name = m[1].toLowerCase();
   if (VOID_TAGS.has(name)) return '';
-  if (!BALANCED_TAGS.has(name)) return null;
+  if (!BALANCED_TAGS.has(name)) return bail(`assignment cell starts with <${name}>`);
   const end = elementEnd(cell, name, m.index + m[0].length);
   const inner = cell.slice(m.index + m[0].length, end === -1 ? cell.length : cell.lastIndexOf('<', end - 1));
   return textOf(inner);
@@ -264,7 +280,8 @@ const UNSAFE_IN_CARD = /<(?:script|style|textarea|thead|tfoot|template|select)\b
 /** One AssignmentClass card → the same object extractClasses builds, or null. */
 function readCard(html, card) {
   const { start, end } = card.inner;
-  if (UNSAFE_IN_CARD.test(html.slice(start, end))) return null;
+  const unsafe = UNSAFE_IN_CARD.exec(html.slice(start, end));
+  if (unsafe) return bail(`class card contains ${unsafe[0].toLowerCase()}`);
 
   const headers = elementsWithClass(html, 'sg-header', start, end);
   if (!headers) return null;
@@ -274,7 +291,7 @@ function readCard(html, card) {
     if (!found) return null;
     for (const h of found) headings.push({ right: hasClass(h.attrs, 'sg-right'), text: textOf(html.slice(h.inner.start, h.inner.end)) });
   }
-  if (headers.length > 1) return null;
+  if (headers.length > 1) return bail(`class card has ${headers.length} .sg-header elements`);
 
   const allText = headings.map((h) => h.text).join('').trim();
   const classHeader = splitClassHeaderAndCourseName(allText).classHeader.trim();
@@ -289,7 +306,8 @@ function readCard(html, card) {
   };
 
   const grids = elementsWithClass(html, 'sg-content-grid', start, end);
-  if (!grids || grids.length > 1) return null;
+  if (!grids) return null;
+  if (grids.length > 1) return bail(`class card has ${grids.length} .sg-content-grid elements`);
   if (grids.length === 0) return result;
   const grid = grids[0].inner;
 
@@ -302,10 +320,12 @@ function readCard(html, card) {
   let cursor = grid.start;
   let m;
   while ((m = openTag.exec(html)) && m.index < grid.end) {
-    if (/\S/.test(html.slice(cursor, m.index).replace(/<\/(?:br|p)\s*>/gi, ''))) return null;
+    if (/\S/.test(html.slice(cursor, m.index).replace(/<\/(?:br|p)\s*>/gi, ''))) {
+      return bail(`text or a close tag before <${m[1].toLowerCase()}> in the grid`);
+    }
     const tag = { index: m.index, end: m.index + m[0].length, name: m[1].toLowerCase(), attrs: attrsOf(m[0]) };
     if (VOID_TAGS.has(tag.name)) {
-      if (hasClass(tag.attrs, 'sg-asp-table') || hasClass(tag.attrs, 'sg-asp-table-group')) return null;
+      if (hasClass(tag.attrs, 'sg-asp-table') || hasClass(tag.attrs, 'sg-asp-table-group')) return bail(`table class on <${tag.name}>`);
       cursor = tag.end;
       openTag.lastIndex = cursor;
       continue;
@@ -313,23 +333,23 @@ function readCard(html, card) {
     const inner = innerOf(html, tag, grid.end);
     if (!inner) return null;
     if (hasClass(tag.attrs, 'sg-asp-table')) {
-      if (tag.name !== 'table') return null;
+      if (tag.name !== 'table') return bail(`.sg-asp-table on <${tag.name}>`);
       tables.push(inner);
     }
     if (hasClass(tag.attrs, 'sg-asp-table-group')) {
       groups.push(inner);
     } else if (!hasClass(tag.attrs, 'sg-asp-table')) {
       // A wrapper the DOM selectors could see into; only a group is understood.
-      if (/sg-asp-table|<tr\b/i.test(html.slice(inner.start, inner.end))) return null;
+      if (/sg-asp-table|<tr\b/i.test(html.slice(inner.start, inner.end))) return bail(`table rows inside a <${tag.name}> in the grid`);
     }
     cursor = inner.outerEnd;
     openTag.lastIndex = cursor;
   }
-  if (/\S/.test(html.slice(cursor, grid.end).replace(/<\/(?:br|p)\s*>/gi, ''))) return null;
+  if (/\S/.test(html.slice(cursor, grid.end).replace(/<\/(?:br|p)\s*>/gi, ''))) return bail('text after the last grid child');
 
   for (const table of tables) {
     const inner = html.slice(table.start, table.end);
-    if (/<table\b|sg-asp-table-group/i.test(inner)) return null;
+    if (/<table\b|sg-asp-table-group/i.test(inner)) return bail('table nested inside the assignments table');
     const rows = dataRows(inner);
     if (!rows) return null;
     for (const cells of rows) {
@@ -368,7 +388,9 @@ function readCard(html, card) {
 
   for (const group of groups) {
     const inner = html.slice(group.start, group.end);
-    if ((inner.match(/<table\b/gi) || []).length > 1 || /sg-asp-table-group|sg-content-grid/i.test(inner)) return null;
+    if ((inner.match(/<table\b/gi) || []).length > 1 || /sg-asp-table-group|sg-content-grid/i.test(inner)) {
+      return bail('category group holds several tables');
+    }
     const tableAt = inner.search(/<table\b/i);
     const body = tableAt === -1 ? inner : inner.slice(inner.indexOf('>', tableAt) + 1).replace(/<\/table\s*>[\s\S]*$/i, '');
     const rows = dataRows(body);
@@ -393,10 +415,10 @@ function scanClasses(html, ranges = hiddenRanges(html)) {
   if (!cardTags) return null;
   const cards = [];
   for (const tag of cardTags) {
-    if (tag.name !== 'div') return null;
+    if (tag.name !== 'div') return bail(`AssignmentClass on <${tag.name}>`);
     const inner = innerOf(html, tag);
     if (!inner) return null;
-    if (cards.length && tag.index < cards[cards.length - 1].inner.outerEnd) return null; // nested cards
+    if (cards.length && tag.index < cards[cards.length - 1].inner.outerEnd) return bail('nested AssignmentClass cards');
     cards.push({ ...tag, inner });
   }
 
@@ -420,4 +442,4 @@ function scanInputValue(html, name) {
   return inputValue(html, hiddenRanges(html), name);
 }
 
-export { scanViewState, scanTermInfo, scanClasses, scanInputValue, hiddenRanges };
+export { scanViewState, scanTermInfo, scanClasses, scanInputValue, hiddenRanges, takeFallbackReason };

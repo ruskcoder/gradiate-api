@@ -23,6 +23,8 @@ class ProgressTracker {
     this.streaming = streaming;
     this.finished = false;
     this.result = null;
+    // How the route ended, for the timing log: "ok", "mfa" or "error <status>".
+    this.outcome = null;
     if (streaming) {
       const { readable, writable } = new TransformStream();
       this.readable = readable;
@@ -43,6 +45,7 @@ class ProgressTracker {
 
   complete(data) {
     if (this.finished) return;
+    this.outcome = data?.mfaRequired ? 'mfa' : 'ok';
     if (this.streaming) {
       this.write(JSON.stringify(data));
     } else {
@@ -53,6 +56,7 @@ class ProgressTracker {
 
   error(statusCode, message) {
     if (this.finished) return;
+    this.outcome = `error ${statusCode}`;
     const errorResponse = { success: false, status: statusCode, message };
     if (this.streaming) {
       this.write(JSON.stringify(errorResponse));

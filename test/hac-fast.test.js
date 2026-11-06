@@ -55,3 +55,10 @@ test('hidden inputs ignore decoys inside scripts and decode entities', () => {
   assert.equal(scanInputValue(html, '__VIEWSTATE'), 'dGhpcyBpcyBhIHZpZXdzdGF0ZQ==/+AB&C');
   assert.equal(scanInputValue(html, '__MISSING'), undefined);
 });
+
+test('a refused page reports why, without page text', async () => {
+  const { takeFallbackReason } = await import('../hac/data/fastScan.js');
+  assert.equal(scanClasses(buildAssignmentsPage({ commentInCard: true })), null);
+  assert.equal(takeFallbackReason(), 'class card contains <!--');
+  assert.equal(takeFallbackReason(), 'unknown'); // cleared once read
+});

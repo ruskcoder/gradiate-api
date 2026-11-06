@@ -52,9 +52,9 @@ function resolveLink(platform, loginData) {
  * follow-up: its cookies + cached challenge token are restored so the SSO flow
  * can pick up the pending challenge rather than starting from scratch.
  */
-async function performLogin(platform, loginType, loginData, progressTracker, resumeSessionData) {
+async function performLogin(platform, loginType, loginData, progressTracker, resumeSessionData, timing = null) {
   if (loginType === 'credentials') {
-    const session = createSession();
+    const session = createSession(timing);
     const result = await platform.credentialsAuth(session, loginData, progressTracker);
     if (!result) return null; // credentialsAuth already streamed an error
     return {
@@ -71,7 +71,7 @@ async function performLogin(platform, loginType, loginData, progressTracker, res
   // browser. On expiry the client re-runs the WebView (silently if the IdP's
   // "stay signed in" cookie is still valid) and hands over fresh cookies.
   if (loginType === 'microsoftSession') {
-    const session = createSession();
+    const session = createSession(timing);
     const link = resolveLink(platform, loginData);
     if (!link) throw new ValidationError('link is required for microsoftSession login');
     if (!loginData.cookies) throw new ValidationError('cookies are required for microsoftSession login');
@@ -87,7 +87,7 @@ async function performLogin(platform, loginType, loginData, progressTracker, res
   }
 
   if (SSO_LOGIN_TYPES.has(loginType)) {
-    let session = createSession();
+    let session = createSession(timing);
     if (resumeSessionData) {
       session = restoreCookiesIntoSession(session, resumeSessionData);
     }
@@ -114,6 +114,7 @@ async function performLogin(platform, loginType, loginData, progressTracker, res
 
 async function authenticate(req, platform, progressTracker) {
   const { loginType, loginData, existingSession } = validateBody(req, platform);
+  const timing = req.timing ?? null; // portal call timings for the request's log line
   progressTracker.update(4, 'Authenticating');
 
   /**
@@ -151,7 +152,7 @@ async function authenticate(req, platform, progressTracker) {
   // the request, and is what routes.js serializes back to the client — so the
   // caller transparently receives the NEW session rather than the expired one.
   const relogin = async () => {
-    const fresh = await performLogin(platform, loginType, loginData, null);
+    const fresh = await performLogin(platform, loginType, loginData, null, undefined, timing);
     if (!fresh) throw new AuthenticationError('Re-authentication failed');
     // A silent re-login can't clear an interactive 2FA prompt on its own. It
     // still succeeds when the stored `loginData` carries a `clMFA` answer (a
@@ -194,7 +195,7 @@ async function authenticate(req, platform, progressTracker) {
   const isMfaResume =
     SSO_LOGIN_TYPES.has(loginType) && loginData.clMFA && existingCache?.mfaToken;
   if (isMfaResume) {
-    const resumed = await performLogin(platform, loginType, loginData, progressTracker, existingSession);
+    const resumed = await performLogin(platform, loginType, loginData, progressTracker, existingSession, timing);
     if (!resumed) return null;
     if (resumed.mfaRequired) return resumed; // still not cleared (e.g. wrong answer re-prompt)
     return finish(resumed.session, resumed.link, resumed.username);
@@ -202,7 +203,7 @@ async function authenticate(req, platform, progressTracker) {
 
   // --- Fast path: reuse a session the client sent back ---
   if (existingSession && Object.keys(existingSession).length > 0) {
-    const base = restoreCookiesIntoSession(createSession(), existingSession);
+    const base = restoreCookiesIntoSession(createSession(timing), existingSession);
     // SSO logins (ClassLink) carry no link in loginData — the portal link was
     // discovered during the original login and stashed in the session cache. Fall
     // back to it so a reused SSO session never has to re-run ClassLink just to
@@ -232,7 +233,7 @@ async function authenticate(req, platform, progressTracker) {
   }
 
   // --- Fresh login ---
-  const fresh = await performLogin(platform, loginType, loginData, progressTracker);
+  const fresh = await performLogin(platform, loginType, loginData, progressTracker, undefined, timing);
   if (!fresh) return null; // streaming error already sent
   if (fresh.mfaRequired) return fresh; // SSO second factor pending
   return finish(fresh.session, fresh.link, fresh.username);

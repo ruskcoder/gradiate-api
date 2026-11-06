@@ -29,7 +29,9 @@ To deploy: set each secret once with `npx wrangler secret put NAME` (the names a
 Notes:
 - The hourly push broadcast is a cron trigger (`triggers.crons`), not a timer.
 - `PUSH_SUBREQUEST_BUDGET` caps the outbound calls per broadcast (Free plan: 50 per invocation). Raise it on the Paid plan.
-- `HAC_FAST_PATH=verify` runs the fast HAC page reader alongside cheerio and logs any difference, to confirm it against real portals.
+- `HAC_FAST_PATH=verify` runs the fast HAC page reader alongside cheerio and logs any difference, to confirm it against real portals. When the fast reader falls back, the log line says which markup it didn't expect.
+- Portal calls time out after `PORTAL_TIMEOUT_MS` (GETs are retried `PORTAL_RETRIES` times), and a request still running after `REQUEST_DEADLINE_MS` answers with a "portal is taking too long" error instead of leaving the app waiting.
+- Every login/data request logs one JSON line (`{"timing": "/hac/classes", ...}`) with its outcome, time spent authenticating, number of portal calls, retries, timeouts and the slowest calls. Search Workers Logs for `timing` to find slow portals. Traces (Observability → Traces) show each call as a span.
 
 _Documentation in progress_
 

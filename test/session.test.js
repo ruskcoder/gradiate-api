@@ -1,6 +1,8 @@
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { createSession, createSuccessResponse, restoreCookiesIntoSession } from '../core/session.js';
+import { bindEnv } from '../core/env.js';
+import { createTiming } from '../core/timing.js';
 
 const realFetch = globalThis.fetch;
 let calls;
@@ -88,4 +90,44 @@ test('session envelope round-trips cookies and cache', async () => {
   assert.equal(restored.cache.link, 'https://hac.example.org/');
   await restored.get('https://hac.example.org/HomeAccess/Content');
   assert.equal(calls.at(-1).headers.get('cookie'), 'K=v');
+});
+
+/** A portal that never answers, except that it honours the abort signal. */
+const stalled = (url, init) => new Promise((resolve, reject) => {
+  init.signal?.addEventListener('abort', () => reject(init.signal.reason));
+});
+
+test('a stalled GET is abandoned after PORTAL_TIMEOUT_MS and retried once', async () => {
+  bindEnv({ PORTAL_TIMEOUT_MS: '40', PORTAL_RETRIES: '1' });
+  let attempt = 0;
+  mockFetch((url, init) => (++attempt === 1 ? stalled(url, init) : new Response('ok')));
+  const timing = createTiming('/test');
+  const res = await createSession(timing).get('https://slow.example/page');
+  assert.equal(res.data, 'ok');
+  assert.equal(calls.length, 2);
+  assert.equal(timing.timeouts, 1);
+  assert.equal(timing.retries, 1);
+  assert.equal(timing.calls, 2);
+});
+
+test('a stalled POST is not retried and fails with a 504 naming the host', async () => {
+  bindEnv({ PORTAL_TIMEOUT_MS: '40', PORTAL_RETRIES: '1' });
+  mockFetch(stalled);
+  await assert.rejects(createSession().post('https://slow.example/login', { a: 1 }), (error) => {
+    assert.equal(error.status, 504);
+    assert.equal(error.message, 'slow.example took too long to respond');
+    return true;
+  });
+  assert.equal(calls.length, 1);
+});
+
+test('timing keeps the slowest calls without query strings or token-like segments', () => {
+  const timing = createTiming('/hac/classes');
+  timing.record(new URL('https://launchpad.classlink.com/login/twoformauth/c4b800e6-bd15-46dc-9637-b71c709d9d6a?x=secret'), 900, 200, 1);
+  timing.record(new URL('https://hac.example.org/HomeAccess/Content/Student/Assignments.aspx'), 300, 200, 1);
+  assert.deepEqual(timing.slowest.map((s) => s.call), [
+    'launchpad.classlink.com/login/twoformauth/:id',
+    'hac.example.org/HomeAccess/Content/Student/Assignments.aspx',
+  ]);
+  assert.equal(timing.portalMs, 1200);
 });

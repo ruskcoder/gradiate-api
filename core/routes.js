@@ -14,6 +14,7 @@
 
 import ProgressTracker from './progressTracker.js';
 import { json } from './http.js';
+import { env } from './env.js';
 import { createSession, createSuccessResponse } from './session.js';
 import { authenticate } from './auth/index.js';
 import { applyGradeOverrides } from './testOverrides.js';
@@ -82,22 +83,49 @@ function sendError(error) {
   return json(error.status || 500, { success: false, message: error.message || 'Internal Server Error' });
 }
 
+// Shown when a request runs out of time. Avoids the words the apps treat as a
+// login problem ("password", "Session", "Invalid"...), so they show it as a
+// retryable error instead of sending the user back to the login screen.
+const SLOW_PORTAL_MESSAGE = "Your school's portal is taking too long to respond. Please try again in a minute.";
+
 /**
  * Run a route's work against a ProgressTracker. A streaming request gets its
  * Response straight away while the work keeps writing to it; otherwise the
  * Response is built once the work is done.
+ *
+ * Every request ends with a final JSON message, whatever happens: an error if
+ * the work throws, and SLOW_PORTAL_MESSAGE if it is still running after
+ * REQUEST_DEADLINE_MS (default 40 s). Before this, a stream that closed without
+ * a final message left the app showing its last progress step forever.
  */
 function track(req, defaultMessage, work) {
   const progressTracker = new ProgressTracker(isStreaming(req));
-  const done = (async () => {
+  const working = (async () => {
     try {
       await work(progressTracker);
     } catch (error) {
       progressTracker.error(error.status || error.statusCode || 500, error.message || defaultMessage);
-    } finally {
-      progressTracker.finish();
     }
+    return 'done';
   })();
+
+  let timer;
+  const deadline = new Promise((resolve) => {
+    timer = setTimeout(() => resolve('deadline'), Number(env.REQUEST_DEADLINE_MS) || 40000);
+  });
+
+  const done = Promise.race([working, deadline]).then((how) => {
+    clearTimeout(timer);
+    if (!progressTracker.finished) {
+      if (how === 'deadline') progressTracker.error(504, SLOW_PORTAL_MESSAGE);
+      else progressTracker.error(500, defaultMessage);
+    }
+    progressTracker.finish();
+    req.timing?.log(how === 'deadline' ? 'deadline' : progressTracker.outcome);
+  });
+
+  // Work cut off by the deadline may still be mid portal call; let it settle.
+  req.waitUntil(working);
   if (progressTracker.streaming) {
     req.waitUntil(done);
     return progressTracker.response();
@@ -123,7 +151,7 @@ function createPlatformRoutes(platform, router) {
         if (!link) {
           return json(HTTP_STATUS.BAD_REQUEST, { success: false, message: 'link is required' });
         }
-        const result = await platform.listDistricts(createSession(), link);
+        const result = await platform.listDistricts(createSession(req.timing), link);
         return json(200, { success: true, ...result });
       } catch (error) {
         return sendError(error);
@@ -144,7 +172,7 @@ function createPlatformRoutes(platform, router) {
           return json(HTTP_STATUS.BAD_REQUEST, { success: false, message: 'link is required' });
         }
         const link = (platform.formatLink || ((l) => l))(rawLink);
-        const result = await platform.authMethods(createSession(), link);
+        const result = await platform.authMethods(createSession(req.timing), link);
         return json(200, { success: true, ...result });
       } catch (error) {
         return sendError(error);
@@ -157,6 +185,7 @@ function createPlatformRoutes(platform, router) {
   // an expired session is caught here rather than on the next data call.
   router.post(`${mount}/login`, (req) => track(req, 'Login failed', async (progressTracker) => {
     const auth = await authenticate(req, platform, progressTracker);
+    req.timing?.authDone();
     if (!auth) return;
     if (auth.mfaRequired) return respondMfaChallenge(progressTracker, auth);
 
@@ -177,6 +206,7 @@ function createPlatformRoutes(platform, router) {
 
     router.post(`${mount}${path}`, (req) => track(req, 'An error occurred', async (progressTracker) => {
       const auth = await authenticate(req, platform, progressTracker);
+      req.timing?.authDone();
       if (!auth) return;
       if (auth.mfaRequired) return respondMfaChallenge(progressTracker, auth);
 

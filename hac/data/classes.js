@@ -18,7 +18,7 @@ import { HAC_ENDPOINTS } from '../config/constants.js';
 import { checkSessionValidity } from '../auth/credentials.js';
 import { ValidationError } from '../../core/errors.js';
 import { env } from '../../core/env.js';
-import { scanViewState, scanTermInfo, scanClasses, hiddenRanges } from './fastScan.js';
+import { scanViewState, scanTermInfo, scanClasses, hiddenRanges, takeFallbackReason } from './fastScan.js';
 
 function splitClassHeaderAndCourseName(classText) {
   const parts = classText.split(' ');
@@ -68,15 +68,18 @@ function read(page, label, fast, slow) {
   const mode = (env.HAC_FAST_PATH || 'on').toLowerCase();
   if (mode === 'off' || typeof page.html !== 'string') return slow(page.$);
   const quick = fast(page.html, page.ranges);
+  const reason = quick === null ? takeFallbackReason() : null;
   if (mode === 'verify') {
     const reference = slow(page.$);
     if (JSON.stringify(quick) !== JSON.stringify(reference)) {
-      console.warn(`hac fast path: ${label} ${quick === null ? 'fell back' : 'MISMATCH'}`);
+      console.warn(`hac fast path: ${label} ${quick === null ? `fell back (${reason})` : 'MISMATCH'}`);
     }
     return reference;
   }
   if (quick !== null) return quick;
-  console.warn(`hac fast path: ${label} fell back to cheerio`);
+  // The reason names the markup the scanner didn't expect, so the scanner can
+  // be taught the real page shape.
+  console.warn(`hac fast path: ${label} fell back to cheerio (${reason})`);
   return slow(page.$);
 }
 

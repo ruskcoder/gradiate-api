@@ -16,6 +16,7 @@
 
 import { CookieJar } from './cookies.js';
 import { debugRequest, debugResponse } from './debug.js';
+import { env } from './env.js';
 
 // What the portals have been receiving from the axios-based client, kept
 // identical so no portal sees a different-looking client after the move.
@@ -27,6 +28,26 @@ const DEFAULT_HEADERS = {
 
 const MAX_REDIRECTS = 21; // follow-redirects' default, which axios used
 const okStatus = (status) => status >= 200 && status < 300;
+
+// A portal call (one redirect hop, body included) that takes longer than this
+// is abandoned. GETs are then retried on a fresh connection, because a stalled
+// call is usually a dropped connection rather than a slow page. Without a limit
+// a stalled portal left the request, and the app's progress bar, waiting.
+const timeoutMs = () => Number(env.PORTAL_TIMEOUT_MS) || 10000;
+const getRetries = () => {
+  const n = Number(env.PORTAL_RETRIES);
+  return Number.isInteger(n) && n >= 0 ? n : 1;
+};
+
+function portalTimeoutError(url) {
+  const error = new Error(`${url.host} took too long to respond`);
+  error.name = 'PortalTimeoutError';
+  error.code = 'ETIMEDOUT';
+  error.status = 504;
+  return error;
+}
+
+const isAbort = (error) => error?.name === 'TimeoutError' || error?.name === 'AbortError';
 
 function isPlainObject(value) {
   if (value === null || typeof value !== 'object') return false;
@@ -119,6 +140,33 @@ async function discard(res) {
   try { await res.body?.cancel(); } catch { /* already closed */ }
 }
 
+/**
+ * One redirect hop: fetch it and, unless it is a redirect being followed, read
+ * the body — all under one timeout. Idempotent requests are retried after a
+ * timeout or a network failure.
+ */
+async function fetchHop(session, url, init, follow) {
+  const attempts = init.method === 'GET' || init.method === 'HEAD' ? 1 + getRetries() : 1;
+  for (let attempt = 1; ; attempt++) {
+    const started = Date.now();
+    try {
+      const res = await fetch(url.href, { ...init, signal: AbortSignal.timeout(timeoutMs()) });
+      const location = res.headers.get('location');
+      const redirect = follow && location && res.status >= 300 && res.status < 400;
+      let text = '';
+      if (redirect) await discard(res);
+      else text = await res.text();
+      session.timing?.record(url, Date.now() - started, res.status, attempt);
+      return { res, text, location: redirect ? location : null };
+    } catch (error) {
+      const timedOut = isAbort(error);
+      session.timing?.record(url, Date.now() - started, timedOut ? 'timeout' : 'error', attempt);
+      if (attempt < attempts) continue;
+      throw timedOut ? portalTimeoutError(url) : error;
+    }
+  }
+}
+
 /** One logical request: every redirect hop carries and collects cookies. */
 async function send(session, method, url, data, config = {}) {
   const headers = new Headers(session.defaults.headers);
@@ -141,18 +189,17 @@ async function send(session, method, url, data, config = {}) {
     else headers.delete('cookie');
 
     const trace = debugRequest(session.label, verb, current.href, redirects === 0 ? data : undefined);
-    let res;
+    let hop;
     try {
-      res = await fetch(current.href, { method: verb, headers, body, redirect: 'manual' });
+      hop = await fetchHop(session, current, { method: verb, headers, body, redirect: 'manual' }, maxRedirects > 0);
     } catch (error) {
       debugResponse(trace, 0, 0, null, error);
       throw error;
     }
+    const { res, text, location } = hop;
     session.defaults.jar.storeAll(setCookieHeaders(res.headers), current);
 
-    const location = res.headers.get('location');
-    if (maxRedirects > 0 && location && res.status >= 300 && res.status < 400) {
-      await discard(res);
+    if (location) {
       if (redirects >= maxRedirects) throw new Error('Maximum number of redirects exceeded');
       redirects++;
       const next = new URL(location, current);
@@ -175,7 +222,6 @@ async function send(session, method, url, data, config = {}) {
       continue;
     }
 
-    const text = await res.text();
     debugResponse(trace, res.status, text.length, null);
     const response = {
       data: parseBody(text),
@@ -191,11 +237,13 @@ async function send(session, method, url, data, config = {}) {
 }
 
 class SessionWrapper {
-  constructor(jar = new CookieJar(), label = 'new') {
+  constructor(jar = new CookieJar(), label = 'new', timing = null) {
     // `defaults.jar` is read on every request, so code that swaps in a fresh jar
     // (Microsoft sign-in retries, session restore) takes effect immediately.
     this.defaults = { jar, headers: { ...DEFAULT_HEADERS } };
     this.label = label;
+    // Where portal call timings go (the request's timing log), if anywhere.
+    this.timing = timing;
     this.cache = {
       lastValidationTime: null,
       verificationToken: null,
@@ -243,8 +291,9 @@ class SessionWrapper {
   }
 }
 
-function createSession() {
-  return new SessionWrapper(new CookieJar(), 'new');
+/** A fresh session. Pass the request's `timing` so its portal calls are logged. */
+function createSession(timing = null) {
+  return new SessionWrapper(new CookieJar(), 'new', timing);
 }
 
 function createSuccessResponse(data, session = null) {

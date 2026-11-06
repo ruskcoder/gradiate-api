@@ -91,3 +91,38 @@ test('non-streaming errors become JSON with the status', async () => {
   assert.equal(res.status, 401);
   assert.deepEqual(await res.json(), { success: false, status: 401, message: 'Invalid username or password' });
 });
+
+test('a request still waiting on the portal at the deadline ends with a clear error', async () => {
+  const realFetch = globalThis.fetch;
+  const realLog = console.log;
+  const lines = [];
+  console.log = (line) => lines.push(String(line));
+  globalThis.fetch = (url, init) => new Promise((resolve, reject) => {
+    init.signal?.addEventListener('abort', () => reject(init.signal.reason));
+  });
+  const env = { REQUEST_DEADLINE_MS: '80', PORTAL_TIMEOUT_MS: '150', PORTAL_RETRIES: '0' };
+  const body = { loginType: 'credentials', loginData: { username: 'u', password: 'p', link: 'https://hac.example.org/' } };
+  try {
+    const plain = await post('/hac/classes', body, env);
+    assert.equal(plain.status, 504);
+    assert.match((await plain.json()).message, /taking too long to respond/);
+
+    const streamed = await post('/hac/classes', { ...body, stream: true }, env);
+    const text = await streamed.text();
+    assert.match(text, /^\{"percent":4,"message":"Authenticating"\}\n\n/);
+    assert.deepEqual(JSON.parse(text.split('\n\n').pop()), {
+      success: false,
+      status: 504,
+      message: "Your school's portal is taking too long to respond. Please try again in a minute.",
+    });
+
+    const summary = lines.map((l) => { try { return JSON.parse(l); } catch { return null; } }).find((l) => l?.timing);
+    assert.equal(summary.timing, '/hac/classes');
+    assert.equal(summary.outcome, 'deadline');
+    assert.equal(summary.authMs, null);
+  } finally {
+    globalThis.fetch = realFetch;
+    console.log = realLog;
+    await new Promise((resolve) => setTimeout(resolve, 200)); // let the abandoned portal call time out
+  }
+});
