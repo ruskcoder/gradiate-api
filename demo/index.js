@@ -106,9 +106,7 @@ function streamGeneratedClasses(req, term) {
   req.waitUntil((async () => {
     try {
       for (let step = 0; step < 5; step += 1) {
-        await writer.write(encoder.encode(JSON.stringify({ percent: step * 20, message: streamMsgs[step] }) + '
-
-'));
+        await writer.write(encoder.encode(JSON.stringify({ percent: step * 20, message: streamMsgs[step] }) + '\n\n'));
         await sleep(400 + Math.random() * 400);
       }
       await writer.write(encoder.encode(JSON.stringify({ success: true, ...buildClasses(term), session: DEMO_SESSION })));
