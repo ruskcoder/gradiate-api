@@ -10,6 +10,7 @@ import loginData from './login.json' with { type: 'json' };
 import infoData from './info.json' with { type: 'json' };
 import classesData from './classes.json' with { type: 'json' };
 import attendanceData from './attendance.json' with { type: 'json' };
+import { buildClasses } from './generate.js';
 
 const streamMsgs = [
   'Loading...',
@@ -87,7 +88,66 @@ function attendancePayload(date) {
   return JSON.parse(fileData);
 }
 
+const DEMO_USER = {
+  username: 'testuser',
+  name: 'Test User',
+  grade: '10',
+  school: 'Gradiate High School',
+  district: 'Demo',
+  dob: '',
+  link: 'https://gradiate.app/',
+};
+const DEMO_SESSION = { cookies: {}, cache: {}, loginMetadata: {} };
+
+/** POST /demo/classes with `stream: true`: progress chunks, then the payload. */
+function streamGeneratedClasses(req, term) {
+  const { readable, writable } = new TransformStream();
+  const writer = writable.getWriter();
+  req.waitUntil((async () => {
+    try {
+      for (let step = 0; step < 5; step += 1) {
+        await writer.write(encoder.encode(JSON.stringify({ percent: step * 20, message: streamMsgs[step] }) + '
+
+'));
+        await sleep(400 + Math.random() * 400);
+      }
+      await writer.write(encoder.encode(JSON.stringify({ success: true, ...buildClasses(term), session: DEMO_SESSION })));
+    } catch { /* client went away */ }
+    await writer.close().catch(() => {});
+  })());
+  return new Response(readable, { status: 200, headers: { 'Content-Type': 'text/event-stream; charset=utf-8' } });
+}
+
+/**
+ * The POST platform interface (`/demo/info`, `/demo/classes`, ...) the web app
+ * uses for the demo account. Anything other than info/classes is not built.
+ */
+function addDemoPlatformRoutes(router) {
+  router.post('/demo', () => json(200, { message: 'Demo API', success: true }));
+  router.post('/demo/info', async () => {
+    await sleep(800);
+    return json(200, { success: true, ...DEMO_USER, session: DEMO_SESSION });
+  });
+  router.post('/demo/classes', async (req) => {
+    const term = req.body?.options?.term || '';
+    if (req.body?.stream === true || req.body?.stream === 'true') return streamGeneratedClasses(req, term);
+    await sleep(1500);
+    return json(200, { success: true, ...buildClasses(term), session: DEMO_SESSION });
+  });
+  router.post('/demo/single-class', async (req) => {
+    const { course, term } = req.body?.options || {};
+    const data = buildClasses(term);
+    const cls = data.classes.find((c) => c.course === course);
+    if (!cls) return json(404, { success: false, message: 'Class not found' });
+    return json(200, { success: true, ...cls, session: DEMO_SESSION });
+  });
+  for (const path of ['/schedule', '/bellSchedule', '/attendance', '/teachers', '/reportCard', '/ipr', '/transcript']) {
+    router.post(`/demo${path}`, () => json(404, { success: false, message: 'Not available in demo mode' }));
+  }
+}
+
 function addDemoRoutes(router) {
+  addDemoPlatformRoutes(router);
   router.get('/demo', () => new Response('Demo App', { headers: { 'Content-Type': 'text/html; charset=utf-8' } }));
   router.get('/demo/login', () => readAndSend(loginData));
   router.get('/demo/info', () => readAndSend(infoData));
